@@ -24,3 +24,11 @@ build-host/prospero-player-test: $(BUILD)/app_player_test.o $(filter-out $(BUILD
 .PHONY: test-player
 test-player: build-host/prospero-player-test
 	./build-host/prospero-player-test
+
+# Decoder/cover objects are built from source in a fresh checkout.
+build-host/decoder.o: source/decoder.c $(wildcard include/*.h include/*.hpp)
+	@mkdir -p build-host
+	$(CC) $(CPPFLAGS) -O1 -c $< -o $@
+build-host/cover_codec.o: source/cover_codec.c $(wildcard include/*.h)
+	@mkdir -p build-host
+	$(CC) $(CPPFLAGS) -O1 -c $< -o $@

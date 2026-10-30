@@ -24,7 +24,11 @@ int main(){
     std::string error;assert(patchSettings(settings,{{"auto_fullscreen",true}},error));assert(settings.autoFullscreen);
     assert(!patchSettings(settings,{{"auto_fullscreen","yes"}},error));assert(settings.autoFullscreen);
     auto config="/tmp/prospero-player-settings-"+std::to_string(getpid())+".json";
-    settings.volume=37;assert(saveSettings(config,settings,error));Settings loaded;assert(loadSettings(config,loaded,error));assert(loaded.volume==37&&loaded.autoFullscreen);
+    assert(settings.listeningHideTitle&&settings.listeningHideClock&&settings.listeningHideMetadata&&settings.listeningHideFooter);
+    assert(patchSettings(settings,{{"listening_hide_title",false},{"listening_hide_clock",false},{"listening_hide_metadata",false},{"listening_hide_footer",false}},error));
+    assert(!patchSettings(settings,{{"listening_hide_clock",123}},error));
+    assert(remoteIdentity()["app_id"]=="prospero-hifi"&&remoteIdentity()["capabilities"]["settings_schema"]==true);
+    settings.volume=37;assert(saveSettings(config,settings,error));Settings loaded;assert(loadSettings(config,loaded,error));assert(loaded.volume==37&&loaded.autoFullscreen&&!loaded.listeningHideTitle&&!loaded.listeningHideClock&&!loaded.listeningHideMetadata&&!loaded.listeningHideFooter);
     {std::ofstream old(config);old<<"{\"volume\":80}";}
     Settings legacy;assert(loadSettings(config,legacy,error));assert(legacy.volume==80&&!legacy.autoFullscreen);
     std::remove(config.c_str());std::remove((config+".bak").c_str());

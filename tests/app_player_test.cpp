@@ -46,6 +46,20 @@ int main(){
         Player player(settings);assert(player.valid());App app(ui,renderer,player,settings,"",root+"/config.json");PadState pad{};
         auto press=[&](u64 button){app.input(pad,button,button,true);app.input(pad,0,0,true);};
         auto draw=[&]{ui.recordScreen(true);app.draw();};
+        if(!automatic&&std::getenv("PROSPERO_PREVIEW_DIR")){
+            Playback fixture;fixture.details.title="Opening";fixture.details.artist="Namco Sounds";
+            fixture.details.album="Dragon Ball FighterZ (Re-Engineered Soundtrack)";
+            fixture.details.format="FLAC";fixture.details.bitDepth=24;fixture.details.sampleRate=44100;fixture.details.bitRate=1755;
+            fixture.position=29;fixture.duration=129;fixture.playing=true;fixture.count=99;fixture.spectrum.fill(1.f);
+            for(bool full:{false,true}){
+                if(full)press(HidNpadButton_StickR);
+                ui.recordScreen(true);app.draw(fixture);assert(hasText(ui,"FLAC")&&hasText(ui,"44.1 kHz"));
+                auto *image=SDL_CreateRGBSurfaceWithFormat(0,1920,1080,32,SDL_PIXELFORMAT_RGBA32);
+                assert(image&&SDL_RenderReadPixels(renderer,nullptr,image->format->format,image->pixels,image->pitch)==0);
+                std::string file=std::string(std::getenv("PROSPERO_PREVIEW_DIR"))+(full?"/full.png":"/mini.png");assert(IMG_SavePNG(image,file.c_str())==0);SDL_FreeSurface(image);
+            }
+            press(HidNpadButton_B);
+        }
         draw();assert(hasText(ui,"Sources"));durationEdge(ui,"--:--",1228,14);leftTitle(ui,900);
         // Settings: categories require Cross, Circle returns to the same category.
         press(HidNpadButton_L);draw();
@@ -88,10 +102,25 @@ int main(){
         Source local{false,{},root};player.play({{local,"test.wav","One"},{local,"test.wav","Two"},{local,"test.wav","Three"}},1);
         press(HidNpadButton_L);assert(player.snapshot().index==0);
         press(HidNpadButton_R);assert(player.snapshot().index==1);
-        press(HidNpadButton_ZL);assert(player.snapshot().index==0);
+        press(HidNpadButton_ZL);assert(player.snapshot().index==1);
         press(HidNpadButton_ZR);assert(player.snapshot().index==1);
         press(HidNpadButton_L|HidNpadButton_ZL);assert(player.snapshot().index==0);
         press(HidNpadButton_R|HidNpadButton_ZR);assert(player.snapshot().index==1);
+        press(HidNpadButton_StickL);draw();assert(!hasText(ui,"Prospero Hi-Fi")&&!hasText(ui,"Volume"));
+        assert(hasText(ui,"--:--")||hasText(ui,"0:01"));
+        press(HidNpadButton_Plus);draw();assert(!hasText(ui,"Prospero Hi-Fi"));
+        press(HidNpadButton_L);assert(player.snapshot().index==0);draw();assert(!hasText(ui,"Prospero Hi-Fi"));
+        press(HidNpadButton_R);assert(player.snapshot().index==1);
+        const bool pausedBeforeExit=player.snapshot().paused;
+        app.input(pad,HidNpadButton_A|HidNpadButton_Plus,HidNpadButton_A|HidNpadButton_Plus,true);
+        assert(player.snapshot().paused==pausedBeforeExit);
+        // Held exit buttons are ignored until release, even on another down event.
+        app.input(pad,HidNpadButton_A|HidNpadButton_Plus,HidNpadButton_A|HidNpadButton_Plus,true);
+        assert(player.snapshot().paused==pausedBeforeExit);
+        app.input(pad,0,0,true);
+        draw();assert(hasText(ui,"Prospero Hi-Fi")&&hasText(ui,"Volume"));
+        // Exiting Cross must not activate the previously focused Equalizer button.
+        assert(!hasText(ui,"Equalizer preset"));
         player.stop();
         press(HidNpadButton_B);draw();assert(hasText(ui,"Sources"));
         press(HidNpadButton_R);draw();assert(player.snapshot().index==1);assert(hasText(ui,"SELECT A MUSIC SOURCE"));

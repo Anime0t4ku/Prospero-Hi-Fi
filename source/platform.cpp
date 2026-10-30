@@ -30,7 +30,7 @@ void padUpdate(PadState *p) {
     button(SDL_CONTROLLER_BUTTON_Y,HidNpadButton_X);button(SDL_CONTROLLER_BUTTON_X,HidNpadButton_Y);
     button(SDL_CONTROLLER_BUTTON_START,HidNpadButton_Plus);button(SDL_CONTROLLER_BUTTON_TOUCHPAD,HidNpadButton_Minus);
     button(SDL_CONTROLLER_BUTTON_BACK,HidNpadButton_Minus);button(SDL_CONTROLLER_BUTTON_LEFTSHOULDER,HidNpadButton_L);
-    button(SDL_CONTROLLER_BUTTON_RIGHTSHOULDER,HidNpadButton_R);button(SDL_CONTROLLER_BUTTON_RIGHTSTICK,HidNpadButton_StickR);
+    button(SDL_CONTROLLER_BUTTON_RIGHTSHOULDER,HidNpadButton_R);button(SDL_CONTROLLER_BUTTON_LEFTSTICK,HidNpadButton_StickL);button(SDL_CONTROLLER_BUTTON_RIGHTSTICK,HidNpadButton_StickR);
     button(SDL_CONTROLLER_BUTTON_DPAD_UP,HidNpadButton_Up);button(SDL_CONTROLLER_BUTTON_DPAD_DOWN,HidNpadButton_Down);
     button(SDL_CONTROLLER_BUTTON_DPAD_LEFT,HidNpadButton_Left);button(SDL_CONTROLLER_BUTTON_DPAD_RIGHT,HidNpadButton_Right);
     if(controller){
@@ -44,7 +44,7 @@ void padUpdate(PadState *p) {
     for(auto b:{std::pair<SDL_Scancode,u64>{SDL_SCANCODE_RETURN,HidNpadButton_A},{SDL_SCANCODE_ESCAPE,HidNpadButton_B},
         {SDL_SCANCODE_UP,HidNpadButton_Up},{SDL_SCANCODE_DOWN,HidNpadButton_Down},{SDL_SCANCODE_LEFT,HidNpadButton_Left},
         {SDL_SCANCODE_RIGHT,HidNpadButton_Right},{SDL_SCANCODE_SPACE,HidNpadButton_Plus},{SDL_SCANCODE_TAB,HidNpadButton_Minus},
-        {SDL_SCANCODE_Q,HidNpadButton_L},{SDL_SCANCODE_E,HidNpadButton_R},{SDL_SCANCODE_F,HidNpadButton_StickR}})
+        {SDL_SCANCODE_Q,HidNpadButton_L},{SDL_SCANCODE_E,HidNpadButton_R},{SDL_SCANCODE_F,HidNpadButton_StickR},{SDL_SCANCODE_G,HidNpadButton_StickL}})
         if(k[b.first])bits|=b.second;
     p->held=bits;p->down=bits&~previous;previous=bits;
 }

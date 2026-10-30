@@ -11,7 +11,15 @@
 #include <vector>
 
 namespace nxh {
-constexpr const char *Version = "1.1.0";
+constexpr const char *Version = "1.2.0";
+// Additive identity: legacy NX clients still use the existing wire format.
+inline nlohmann::json remoteIdentity(){
+    return {{"app_id","prospero-hifi"},{"name","Prospero Hi-Fi"},{"platform","ps5"},
+        {"version",Version},{"protocol_version",1},
+        {"capabilities",{{"independent_control",true},{"screen_control",true},
+            {"settings_schema",true},{"dynamic_sources",true},{"source_management",true},
+            {"equalizer",true},{"listening_mode",true},{"outgoing_remote",false}}}};
+}
 struct Share {
     std::string name, server, share, folder, user, password, domain;
     bool guest = false;
@@ -31,6 +39,7 @@ struct Settings {
     int screensaverSeconds = 0, remotePort = 8182;
     int volume = 100;
     bool autoFullscreen = false;
+    bool listeningHideTitle=true, listeningHideClock=true, listeningHideMetadata=true, listeningHideFooter=true;
     bool shuffle = false, gaplessPlayback = true;
     int repeat = 0;
     bool eqEnabled = false;

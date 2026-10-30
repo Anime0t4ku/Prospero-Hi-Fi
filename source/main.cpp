@@ -298,6 +298,7 @@ class App {
                 std::clamp((x - seekRect().x) / double(seekRect().w), 0., 1.) * p.duration;
     }
     bool beginScrub(int x, int y) {
+        if(listening)return false;
         auto p = player.snapshot();
         if (!scrubHit(x, y) || p.duration <= 0 || (!p.playing && !p.busy))
             return false;
@@ -320,9 +321,16 @@ class App {
         mouseScrub = false;
     }
     bool fullscreen = false;
+    bool listening=false;
+    u64 listeningBlocked=0;
+    void setListening(bool enabled){
+        if(enabled){colourPicking=false;optionApply={};if(!fullscreen)toggleFullscreen();}
+        listening=enabled;scrubbing=mouseScrub=false;wake();
+        verticalRepeat={};horizontalRepeat={};
+    }
     void toggleFullscreen() {
         if(colourPicking)return;
-        fullscreen=!fullscreen;scrubbing=mouseScrub=false;
+        fullscreen=!fullscreen;listening=false;scrubbing=mouseScrub=false;
         controlsFocused=fullscreen;
         if(fullscreen)fullFocus={2,1};
         syncPlayerFocus();
@@ -364,9 +372,11 @@ class App {
     }
 
     void header() {
+        if(!(listening&&settings.listeningHideTitle)){
         ui.text(28, 19, "Prospero Hi-Fi", 38, ACCENT);
         ui.text(28 + ui.textWidth("Prospero Hi-Fi", 38) + 14, 35, std::string("v") + Version, 16, MUTED);
-        if (settings.showClock) {
+        }
+        if (settings.showClock&&!(listening&&settings.listeningHideClock)) {
             auto label = clock();
             ui.text(1252 - ui.textWidth(label, 22), 29, label, 22, TEXT);
         }
@@ -471,6 +481,9 @@ class App {
                 settings = before;
                 return fail(status);
             }
+        } else if(op=="listening_mode"){
+            if(!j.contains("enabled")||!j["enabled"].is_boolean())throw std::runtime_error("enabled must be boolean");
+            setListening(j["enabled"].get<bool>());
         } else if (op == "settings") {
             if (!j.contains("revision") || !j["revision"].is_number_integer() ||
                 j["revision"].get<uint64_t>() != revision)
@@ -591,7 +604,8 @@ class App {
             accents.push_back({{"name", preset.name}, {"hex", preset.hex}});
         auto localSources=J::array();
         for(auto &device:storageDevices_)localSources.push_back({{"id",device.id},{"name",device.name},{"mount",device.mount},{"folder",storageFolder(settings,device)}});
-        return {{"version", Version},
+        return {{"identity",remoteIdentity()}, {"app_id","prospero-hifi"}, {"protocol_version",1}, {"listening_mode",listening},
+                {"version", Version},
                 {"local_sources",localSources},
                 {"physical_disc", std::any_of(storageDevices_.begin(),storageDevices_.end(),[](const auto &d){return d.id==-2;})},
                 {"revision", revision},
@@ -1176,6 +1190,7 @@ class App {
         }
     }
     void click(int x, int y) {
+        if(listening){setListening(false);return;}
         if (connectionOpen || scanOpen) {
             dialogClick(x, y);
             return;
@@ -1314,15 +1329,23 @@ class App {
         ui.marquee(x,180,trackTitle(p),34,TEXT,width,"fullscreen-title");
         ui.text(x,238,p.details.artist,25,ACCENT,width);
         ui.text(x,282,trackAlbum(p),22,MUTED,width);
-        drawBadges(p,x,330,width,16);
-        if(settings.visualizer)for(int i=0;i<32;i++){
-            int h=int(std::clamp(p.spectrum[i],0.f,1.f)*75);
-            ui.rect(x+i*(width/32),layout().bottom(335)-std::max(2,h),std::max(3,width/32-7),std::max(2,h),ACCENT);
-        }
+        if(!(listening&&settings.listeningHideMetadata))drawBadges(p,x,322,width,16);
+        drawVisualizer(p);
         if(p.count>0)ui.text(64,layout().bottom(490),std::to_string(p.index+1)+" / "+std::to_string(p.count),16,MUTED);
     }
+    void drawVisualizer(const Playback &p){
+        if(!settings.visualizer)return;
+        int x=fullscreen?playerX():900,w=fullscreen?playerWidth():328;
+        int y=fullscreen?365:392,h=fullscreen?42:22;
+        y+=layout().extraHeight();
+        UI::Clip clip(ui,x,y,w,h);
+        for(int i=0;i<32;i++){
+            int bar=std::max(2,int(std::clamp(p.spectrum[i],0.f,1.f)*h));
+            ui.rect(x+i*w/32,y+h-bar,std::max(3,w/32-4),bar,ACCENT);
+        }
+    }
     void drawSeek(const Playback &p){
-        auto a=seekRect();bool focus=(controlsFocused||fullscreen)&&playerFocus().seek();
+        auto a=seekRect();bool focus=!listening&&(controlsFocused||fullscreen)&&playerFocus().seek();
         if(focus){ui.roundedRect(a.x-5,a.y-5,a.w+10,a.h+10,ACCENT,10);ui.roundedRect(a.x-3,a.y-3,a.w+6,a.h+6,PANEL,8);}
         double position=scrubbing?scrubPosition:p.position;
         int y=a.y+12;ui.rect(a.x,y,a.w,5,LINE);
@@ -1381,12 +1404,14 @@ class App {
         ui.button(432, 531, 380, 44, "Cancel", colourSelection == 15);
     }
     void drawControls(const Playback &p,const std::string &message){
-        if(!colourPicking){drawSeek(p);drawPlayerButtons(p);}
+        if(!colourPicking){drawSeek(p);if(!listening)drawPlayerButtons(p);}
         // Status/errors stay visible outside the compact controls-only footer.
         if(!message.empty())ui.text(fullscreen?30:600,fullscreen?90:64,message,13,ACCENT,fullscreen?1210:620);
+        if(listening&&settings.listeningHideFooter)return;
         ui.rect(0,layout().footerY(),1280,layout().footerHeight(),FOOTER);
         int x=28,y=layout().footerY()+8;
         auto hint=[&](const char *button,const std::string &action){x=ui.padHint(x,y,button,action);};
+        if(listening){hint("Options","Play/Pause");hint("L1","");hint("R1","Track");hint("L2","");hint("R2","Seek 5s");hint("L3","Exit");return;}
         if(optionApply){hint("Dpad","Navigate");hint("Cross","Select");hint("Circle","Back");return;}
         if(colourPicking){hint("Dpad","Colour");hint("Cross","Choose");hint("Circle","Cancel");return;}
         if(fullscreen||controlsFocused){
@@ -1398,7 +1423,7 @@ class App {
         }else{hint("Dpad","Navigate");hint("Cross",page==3?(settingsNavigation.entries?"Change":"Select"):editing?"Edit":"Open");hint("Circle",page==3&&settingsNavigation.entries?"Categories":"Back");if(page==0)hint("Triangle","Edit source");}
         if(!fullscreen){hint("Touchpad","Player");hint("L1","");hint("R1","Tabs");hint("R3","Fullscreen");}
         hint("Options","Play/Pause");
-        if(fullscreen){hint("L1","");hint("R1","Track");hint("L2","");hint("R2","Track");}
+        if(fullscreen){hint("L1","");hint("R1","Track");hint("L2","");hint("R2","Seek 5s");hint("L3","Listening");}
     }
 
   public:
@@ -1539,6 +1564,23 @@ class App {
             if (wasSleeping)
                 return;
         }
+        // Consume the exit press and every held input until its release.
+        listeningBlocked &= held;
+        down &= ~listeningBlocked;held &= ~listeningBlocked;
+        if(listening){
+            constexpr u64 playback=HidNpadButton_Plus|HidNpadButton_L|HidNpadButton_R|HidNpadButton_ZL|HidNpadButton_ZR;
+            if(down&~playback){listeningBlocked=held|down;setListening(false);return;}
+            if(down&HidNpadButton_Plus)player.pause();
+            if(down&HidNpadButton_L)player.previous();
+            if(down&HidNpadButton_R)player.next();
+            if(down&HidNpadButton_ZL)player.seek(-5);
+            if(down&HidNpadButton_ZR)player.seek(5);
+            SDL_Event event;while(SDL_PollEvent(&event))if(event.type==SDL_QUIT)running=false;
+            return;
+        }
+        if(fullscreen&&!colourPicking&&!optionApply&&(down&HidNpadButton_StickL)){
+            setListening(true);listeningBlocked=held|down;return;
+        }
         if (down & HidNpadButton_Plus)
             player.pause();
         if (SDL_GetTicks64() < cooldown) {
@@ -1569,10 +1611,12 @@ class App {
         int horizontal=left?-1:right?1:0;
         if(horizontalRepeat.fire(horizontal,down&(HidNpadButton_Left|HidNpadButton_Right),SDL_GetTicks64()))
             adjust(horizontal);
-        if (down & (HidNpadButton_ZL | (fullscreen ? HidNpadButton_L : 0)))
+        if (down & (fullscreen ? HidNpadButton_L : HidNpadButton_ZL))
             player.previous();
-        if (down & (HidNpadButton_ZR | (fullscreen ? HidNpadButton_R : 0)))
+        if (down & (fullscreen ? HidNpadButton_R : HidNpadButton_ZR))
             player.next();
+        if(fullscreen&&(down&HidNpadButton_ZL))player.seek(-5);
+        if(fullscreen&&(down&HidNpadButton_ZR))player.seek(5);
         if (!fullscreen && !colourPicking && !optionApply && (down & HidNpadButton_Minus)) {
             controlsFocused=!controlsFocused;syncPlayerFocus();
         }
@@ -1732,7 +1776,7 @@ class App {
         ui.recordScreen(settings.remoteEnabled && screenSessions.active(SDL_GetTicks64()) &&
                         SDL_GetTicks64() - lastScreenPublish >= 50);
         updateRemote();
-        sleeping = settings.screensaverSeconds > 0 &&
+        sleeping = !listening && settings.screensaverSeconds > 0 &&
                    SDL_GetTicks64() - lastInteraction >= Uint64(settings.screensaverSeconds) * 1000;
         player.tick();
         LoadResult result;
@@ -1805,7 +1849,8 @@ class App {
             mouseScrub = false;
         }
     }
-    void draw() {
+    void draw(){draw(player.snapshot());}
+    void draw(const Playback &p) {
         frameDiagnostics.view=fullscreen?"fullscreen":"menu";
         if (connectionOpen) {
             drawConnection();
@@ -1822,7 +1867,6 @@ class App {
         }
         setAppearance(settings.theme, colourPicking ? colourHex(customRGB) : settings.accent);
         ui.begin();
-        auto p = player.snapshot();
         if (sleeping) {
             ui.rect(0, 0, 1280, layout().height(), {0, 0, 0});
             if (settings.showClock)
@@ -1978,7 +2022,7 @@ class App {
         ui.marquee(900,artworkVisible()?layout().compactTitleY():190,trackTitle(p),22,TEXT,328,"compact-title");
         ui.text(900,artworkVisible()?layout().compactTitleY()+34:228,!p.details.artist.empty()?p.details.artist:trackAlbum(p),16,MUTED,328);
         drawBadges(p,900,artworkVisible()?layout().compactTitleY()+65:265,328,12);
-        if(settings.visualizer)for(int i=0;i<32;i++){int h=int(std::clamp(p.spectrum[i],0.f,1.f)*15);ui.rect(902+i*10,layout().bottom(383)-std::max(2,h),6,std::max(2,h),ACCENT);}
+        drawVisualizer(p);
         if (colourPicking)
             drawColours();
         auto message = !p.error.empty() ? p.error : status;

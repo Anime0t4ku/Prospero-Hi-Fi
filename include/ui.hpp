@@ -449,7 +449,7 @@ class UI {
         else marquee(x,y,value,size,color,w,key);
     }
     int padHint(int x,int y,const std::string &button,const std::string &label){
-        int id=button=="Cross"?20:button=="Circle"?21:button=="Triangle"?22:button=="Square"?23:button=="Dpad"?24:button=="Options"?25:button=="Touchpad"?26:button=="R3"?27:28;
+        int id=button=="Cross"?20:button=="Circle"?21:button=="Triangle"?22:button=="Square"?23:button=="Dpad"?24:button=="Options"?25:button=="Touchpad"?26:(button=="R3"||button=="L3")?27:28;
         int size=24;transportIcon(x+12,y+12,size,id,false,TEXT,false);
         if(id==27||id==28)centeredText(x,y+2,24,20,button,8,TEXT);
         text(x+25,y+2,label,13,MUTED);

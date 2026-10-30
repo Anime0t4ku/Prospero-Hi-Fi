@@ -139,6 +139,10 @@ nlohmann::json settingsDocument(const Settings &s, bool secrets) {
             {"storage_folders",s.storageFolders},
             {"volume", s.volume},
             {"auto_fullscreen",s.autoFullscreen},
+            {"listening_hide_footer",s.listeningHideFooter},
+            {"listening_hide_metadata",s.listeningHideMetadata},
+            {"listening_hide_clock",s.listeningHideClock},
+            {"listening_hide_title",s.listeningHideTitle},
             {"shuffle", s.shuffle},
             {"repeat", s.repeat},
             {"eq_enabled", s.eqEnabled},
@@ -189,6 +193,10 @@ nlohmann::json settingFields() {
     add("hide_missing_art", "Hide missing artwork placeholder", "Artwork", "bool");
     add("prefer_folder_art", "Prefer folder artwork", "Artwork", "bool");
     add("visualizer", "Show visualizer", "Visualizer", "bool");
+    add("listening_hide_title", "Hide app title and version", "Listening Mode", "bool");
+    add("listening_hide_clock", "Hide clock", "Listening Mode", "bool");
+    add("listening_hide_metadata", "Hide technical metadata", "Listening Mode", "bool");
+    add("listening_hide_footer", "Hide footer", "Listening Mode", "bool");
     add("auto_fullscreen", "Auto Fullscreen", "Playback", "bool");
     add("gapless_playback", "Gapless audio CD playback", "Playback", "bool");
     add("remember_shuffle_repeat", "Remember shuffle / repeat", "Playback", "bool");
@@ -213,6 +221,14 @@ bool patchSettings(Settings &s, const nlohmann::json &patch, std::string &error)
         bool *flag = nullptr;
         if (key == "auto_fullscreen")
             flag = &next.autoFullscreen;
+        else if (key == "listening_hide_title")
+            flag = &next.listeningHideTitle;
+        else if (key == "listening_hide_clock")
+            flag = &next.listeningHideClock;
+        else if (key == "listening_hide_metadata")
+            flag = &next.listeningHideMetadata;
+        else if (key == "listening_hide_footer")
+            flag = &next.listeningHideFooter;
         else if (key == "show_clock")
             flag = &next.showClock;
         else if (key == "clock_24h")

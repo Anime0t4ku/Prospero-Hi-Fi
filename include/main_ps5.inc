@@ -12,7 +12,7 @@ int main(int argc,char **argv) {
     if(screenshot)settings.remoteEnabled=false;
 #endif
     if(!storageAccessReady())error="Storage access unavailable. Start your local ELF loader (port 9021), then reopen Prospero Hi-Fi.";
-    playbackTrace("boot.prospero-1.1.0",0,true);
+    playbackTrace("boot.prospero-1.2.0",0,true);
     if(SDL_Init(SDL_INIT_VIDEO|SDL_INIT_AUDIO|SDL_INIT_EVENTS|SDL_INIT_GAMECONTROLLER)<0){std::fprintf(stderr,"SDL: %s\n",SDL_GetError());return 1;}
     SDL_DisplayMode output{};
     if(SDL_GetCurrentDisplayMode(0,&output)!=0||output.w<640||output.h<480){output.w=1920;output.h=1080;}

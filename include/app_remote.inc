@@ -263,9 +263,9 @@ u64 screenButtons(unsigned b) {
                         HidNpadButton_Y,    HidNpadButton_Minus, HidNpadButton_Plus,
                         HidNpadButton_L,    HidNpadButton_R,     HidNpadButton_ZL,
                         HidNpadButton_ZR,   HidNpadButton_Up,    HidNpadButton_Down,
-                        HidNpadButton_Left, HidNpadButton_Right, HidNpadButton_StickR};
+                        HidNpadButton_Left, HidNpadButton_Right, HidNpadButton_StickR, HidNpadButton_StickL};
     u64 out = 0;
-    for (int i = 0; i < 15; ++i)
+    for (int i = 0; i < 16; ++i)
         if (b & (1u << i))
             out |= keys[i];
     return out;
@@ -283,12 +283,14 @@ void dispatchScreenInput(const nlohmann::json &j) {
     if (wasSleeping)
         return;
     if (kind == "buttons") {
-        unsigned b = j.value("buttons", 0u) & 32767;
+        unsigned b = j.value("buttons", 0u) & 65535;
         PadState dummy{};
         cooldown = 0;
         input(dummy, screenButtons(b), screenButtons(b), true);
         return;
     }
+    // Screen pointers cannot operate invisible player controls. Consume the gesture.
+    if(listening){if(kind=="up")setListening(false);return;}
     int w = j.value("w", 0), h = j.value("h", 0);
     if (w != layout().width() || h != layout().height())
         return;

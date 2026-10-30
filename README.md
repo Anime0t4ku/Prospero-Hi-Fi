@@ -41,7 +41,7 @@ Internal Storage is always listed. M.2 and USB sources appear when their drives 
 | D-pad / left stick | Navigate |
 | ✕ / ○ | Select / Back |
 | L1 / R1 | Switch tabs; previous/next track in fullscreen |
-| L2 / R2 | Previous / Next track |
+| L2 / R2 | Seek −5 / +5 seconds in fullscreen; previous / next in menus |
 | Options | Play / Pause |
 | Square | Toggle shuffle |
 | Triangle | Edit a source; otherwise stop playback |
@@ -62,11 +62,19 @@ Choose Dark, Light or OLED themes, an accent colour, artwork preferences, a visu
 
 Artwork comes from supported MP3/FLAC tags or nearby JPG/PNG files such as `cover.jpg`, `folder.png` or `front.jpg`.
 
+## Listening Mode
+
+Press **L3** in fullscreen to enter Listening Mode. Playback buttons and volume controls disappear; artwork, track information, visualizer and seeker remain. Under **Settings > Listening Mode**, choose whether to hide the title/version, clock, technical metadata and footer (all hidden by default).
+
+**Options** plays/pauses, **L1/R1** changes track and **L2/R2** seeks five seconds without leaving Listening Mode. Any other button exits without performing its normal action. The web remote remains usable and includes a Listening Mode toggle.
+
 ## Remote control
 
 Enable **Web Remote** in Settings. Keep Prospero running and connect both devices to the same network.
 
 **Browser:** open the address shown in Settings, normally `http://PS5-IP:8182`. Browse music, control playback, view artwork, adjust EQ/settings and manage sources. **Screen Control** mirrors the PS5 interface and supports remote text entry.
+
+The browser interface adapts to desktop and mobile, with folder filtering, grouped settings and a compact mobile player. **Screen Control** has its own view.
 
 **NX Hi-Fi:** open **Remote** on your Switch and add the PS5's IP address with port **8182**, or scan for clients. Choose **Independent control** for NX's own remote interface or **Screen Control** to operate Prospero's screen. Older NX clients need Screen Control to access the separate M.2/USB entries. In Screen Control, hold **Minus for three seconds** to open NX's local menu and disconnect.
 

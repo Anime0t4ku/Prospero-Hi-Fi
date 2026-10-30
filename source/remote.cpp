@@ -306,6 +306,7 @@ bool RemoteServer::serve(int fd) {
     }
     if (method == "GET" && path == "/api/info") {
         jsonResponse(fd, {{"app", "NX Hi-Fi"},
+                          {"identity",remoteIdentity()}, {"app_id","prospero-hifi"}, {"protocol_version",1},
                           {"name", "Prospero Hi-Fi"}, {"platform", "ps5"}, {"outgoing_remote", false},
                           {"version", Version},
                           {"port", 8182},

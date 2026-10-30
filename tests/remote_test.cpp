@@ -72,6 +72,7 @@ int main() {
     int port = server.port();
     auto info=body(http(port,"GET","/api/info"));
     assert(info["app"]=="NX Hi-Fi" && info["name"]=="Prospero Hi-Fi");
+    assert(info["app_id"]=="prospero-hifi"&&info["identity"]["protocol_version"]==1&&info["identity"]["capabilities"]["listening_mode"]==true);
     assert(info["screen_control"]==true && info["outgoing_remote"]==false);
     assert(http(port,"GET","/api/discovery").find("403 Forbidden")!=std::string::npos);
     assert(http(port,"POST","/api/probe",R"({"host":"127.0.0.1"})").find("403 Forbidden")!=std::string::npos);
