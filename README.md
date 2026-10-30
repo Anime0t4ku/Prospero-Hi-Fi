@@ -1,171 +1,86 @@
 # Prospero Hi-Fi
 
-Prospero Hi-Fi is a music player for PS5 homebrew, based on my NX Hi-Fi project and its MiSTer Hi-Fi roots. It brings internal, M.2, USB and network music playback, physical audio CDs, album artwork, an equalizer and remote control from a browser or NX Hi-Fi.
+A music player for PS5 homebrew, based on **NX Hi-Fi** and **MiSTer Hi-Fi**.
 
-Supported audio formats and codecs: **MP3, FLAC, PCM WAV and Ogg Vorbis**.
+Play music from internal storage, M.2, USB, SMB network shares and external USB audio CD drives. Includes album artwork, a five-band equalizer, shuffle, repeat, a fullscreen player and remote control from a browser or NX Hi-Fi.
 
-## Getting started
+**Supported formats:** MP3, FLAC, PCM WAV and Ogg Vorbis.
 
-1. Extract the ready-to-use ShadowMount+ folder ZIP on your computer.
-2. Copy the complete `PPSA99287` folder to `/data/homebrew/PPSA99287/` on your PS5. Keep all included files and subfolders together.
-3. With your jailbreak, kstuff and ShadowMount+ active, scan/register the homebrew folder and launch **Prospero Hi-Fi** from the PS5 home screen.
-4. Put music in the appropriate folder below, choose its source and select a song.
+## Installation
 
-| Storage | Default music folder |
+Requires a working PS5 homebrew setup with **ShadowMount+**.
+
+1. Download and extract the ready-to-use homebrew folder ZIP.
+2. Copy the complete `PPSA99287` folder to `/data/homebrew/PPSA99287/`.
+3. Scan/register it in ShadowMount+ and launch **Prospero Hi-Fi**.
+4. Add music to a folder below, open its source and select a track.
+
+To update, replace the complete application folder and rescan. Your settings remain in `/data/prospero-hifi/`.
+
+## Music sources
+
+| Storage | Default folder |
 | --- | --- |
 | Internal Storage | `/data/music` |
 | M.2 Storage | `/mnt/ext1/Music` |
 | USB Storage | `/mnt/usb0/Music` through `/mnt/usb7/Music` |
 | USB Extended Storage | `/mnt/ext0/Music` |
 
-Create the `Music` folder on an external drive if it does not exist. Select a storage source and press **Triangle** to choose a different folder. Each external mount remembers its own music folder.
+Create the external drive's `Music` folder if needed. Highlight a source and press **Triangle** to change its music folder.
 
-Internal Storage is always visible. M.2 and USB entries appear only when the corresponding volume is mounted and accessible. Physical Disc appears only when a supported USB optical drive is detected, even if no CD is inserted. Drive detection refreshes in the background.
+Internal Storage is always listed. M.2 and USB sources appear when their drives are mounted and accessible. Physical Disc appears when a supported USB optical drive is detected.
 
-The current target setup is **PS5 firmware 13.60 with Y2JB and ShadowMount+**. Older firmware compatibility depends on the homebrew setup and has not been fully verified. If your setup does not already grant storage access, a local ELF loader must be listening on port **9021**; Prospero submits its bundled access helper automatically.
+**Network shares:** choose **Sources > Add SMB share**, enter the server, share and optional subfolder, then test and save. For `\\NAS\Music\Albums`, use server `NAS`, share `Music` and subfolder `Albums`. SMB2/SMB3, guest access and username/password login are supported.
 
-For network features, connect your PS5 through its system settings first. Existing settings are kept when you replace the application folder. Use the ready-to-use folder download for installation; the source ZIP is for development.
-
-## v1.1.0 player update
-
-The menu player has a larger Play/Pause button, focusable seek and volume controls, and a compact footer with PS5 button symbols. The track list and mini-player panels use the space freed by the smaller footer. Playback icons use smooth vector graphics.
-
-Track title, artist and album remain left-aligned. Text inside technical badges such as FLAC, bit depth and sample rate is centered on its visible glyphs. Total duration ends beneath the seek bar's right endpoint in both players.
-
-The file browser uses natural, case-insensitive sorting: folders come first, with names such as Track 2 before Track 10. This applies to local storage and SMB shares.
-
-Fullscreen opens with Play/Pause highlighted and has no labels underneath its playback buttons. Both L1/R1 and L2/R2 skip tracks in fullscreen; L1/R1 still switch tabs in the main menu. Circle returns to browsing. The fullscreen Equalizer shortcut opens an in-player preset dialog.
-
-## Player controls
-
-The menu player has Previous, a larger Play/Pause button and Next, with Stop, Shuffle, Repeat and Fullscreen on a secondary row. The seek bar and volume slider can be highlighted and adjusted with the D-pad. Touchpad switches between browsing and the player, remembering the player's last focused control.
-
-Fullscreen uses a separate MiSTer Hi-Fi-style layout: artwork and metadata, seek bar, volume strip and a transport row with an Equalizer preset dialog that keeps you in fullscreen. L1/R1 do not switch tabs in fullscreen. Circle closes fullscreen and returns to browsing.
-
-**Settings > Playback > Auto Fullscreen** opens fullscreen when you select a track. It is off by default. Automatic track changes leave your current view unchanged. The default volume for new configurations is **100%**; existing saved volumes are retained.
-
-## Playing music
-
-Play supported music files from Internal Storage, M.2 Storage, USB storage or an SMB network share.
-
-Selecting a song plays the supported music files in that folder, starting from your selection. Use the player controls to pause, skip, stop, change volume, shuffle or repeat. Repeat cycles between Off, Repeat All and Repeat One.
-
-You can keep browsing while music plays. Open the fullscreen player by pressing **R3** or selecting the expand button. Press **Circle** or **R3** to return.
-
-The interface scales to the PS5's active output resolution. Prospero Hi-Fi must remain running to play music; it does not provide background music while playing PS5 games.
+**Audio CDs:** connect an external USB CD/DVD drive, insert an audio CD and open **Physical Disc**. CDs play directly, with seeking, EQ and gapless playback. MusicBrainz provides track information when available; unknown discs use numbered track names. Reopen Physical Disc after changing CDs. The PS5's built-in disc drive is not supported.
 
 ## Controls
 
-| DualSense control | Action |
+| Button | Action |
 | --- | --- |
-| L1 / R1 | Switch sections while browsing; previous/next track in fullscreen |
-| D-pad / left stick | Move through lists |
-| Cross / Circle | Select / Back; Circle closes fullscreen |
-| Left / Right | Jump through lists, adjust EQ, select a player button, or adjust the highlighted seek/volume slider |
+| D-pad / left stick | Navigate |
+| ✕ / ○ | Select / Back |
+| L1 / R1 | Switch tabs; previous/next track in fullscreen |
+| L2 / R2 | Previous / Next track |
 | Options | Play / Pause |
-| L2 / R2 | Previous / Next song |
 | Square | Toggle shuffle |
-| Touchpad click | Switch between browsing and player controls |
-| R3 | Open or close fullscreen |
-| Triangle | Edit the selected source; otherwise stop playback |
+| Triangle | Edit a source; otherwise stop playback |
+| Touchpad click | Switch between browsing and mini-player controls |
+| R3 | Open / Close fullscreen |
 
-While player controls are focused, Up/Down moves between control rows. Left/Right seeks in ten-second steps when the seek bar is highlighted, or adjusts volume in five-percent steps when the volume strip is highlighted. Hold a direction to repeat. Circle returns to browsing. On-screen hints identify the focused control.
+In either player, **Up/Down** moves between control rows. **Left/Right** selects buttons, seeks in ten-second steps or adjusts volume in five-percent steps, depending on the highlighted control. **Circle** leaves player controls or closes fullscreen.
 
-### On-screen keyboard
+In **Settings**, highlight a category on the left and press **✕** to enter its settings. Press **○** to return to categories. The mini player stays on the right.
 
-The controller keyboard includes lowercase, uppercase and symbol pages, plus Space, Delete and Done keys.
+On the **on-screen keyboard**, use **✕** to type, **Square** to delete, **Triangle** for a space, **L1/R1** to change pages, **Options** to confirm and **○** to cancel.
 
-| Control | Action |
-| --- | --- |
-| D-pad / left stick | Select a key |
-| Cross | Type the selected key |
-| Square | Delete the previous character |
-| Triangle | Insert a space |
-| L1 / R1 | Change keyboard page |
-| Options | Confirm |
-| Circle | Cancel without saving changes |
+## Playback and appearance
 
-## Music from a network share
+Selecting a track starts playback of that folder's supported music files. Keep browsing while music plays, or open fullscreen with **R3**. Enable **Settings > Playback > Auto Fullscreen** to open it automatically when selecting a track; this is off by default.
 
-Open **Sources > Add SMB share**, enter the server and share details, test the connection and select **Save share**.
+Choose Dark, Light or OLED themes, an accent colour, artwork preferences, a visualizer, a clock and a screensaver. Blue is the default accent. The interface scales to the active output resolution, and settings save automatically.
 
-For a network folder such as `\\NAS\Music\Albums`, enter:
+Artwork comes from supported MP3/FLAC tags or nearby JPG/PNG files such as `cover.jpg`, `folder.png` or `front.jpg`.
 
-- **Server:** `NAS` or its IP address
-- **Share:** `Music`
-- **Subfolder:** `Albums` — optional
+## Remote control
 
-Enter a username and password, or enable Guest if your server allows it. SMB2/SMB3 shares are supported. Select a saved share and press **Triangle** to edit or remove it.
+Enable **Web Remote** in Settings. Keep Prospero running and connect both devices to the same network.
 
-## Artwork and appearance
+**Browser:** open the address shown in Settings, normally `http://PS5-IP:8182`. Browse music, control playback, view artwork, adjust EQ/settings and manage sources. **Screen Control** mirrors the PS5 interface and supports remote text entry.
 
-Artwork is read from supported MP3 and FLAC files. You can also place `cover.jpg`, `folder.png` or `front.jpg` beside your music; JPG, JPEG and PNG variants are supported.
+**NX Hi-Fi:** open **Remote** on your Switch and add the PS5's IP address with port **8182**, or scan for clients. Choose **Independent control** for NX's own remote interface or **Screen Control** to operate Prospero's screen. Older NX clients need Screen Control to access the separate M.2/USB entries. In Screen Control, hold **Minus for three seconds** to open NX's local menu and disconnect.
 
-Settings includes Light, Dark and OLED themes, accent colours, artwork preferences, a visualizer, a clock and a screensaver. **Blue is the default accent colour.** The Equalizer section provides presets and manual adjustment of five frequency bands.
+Audio plays on the PS5. Disconnecting a remote leaves playback running. Prospero accepts remote control but cannot control another Hi-Fi instance.
 
-Settings are saved automatically. The screensaver turns the display black while playback continues; press a button to wake it.
+## Notes
 
-Settings uses a category menu on the left, the selected category's entries in the middle and the mini player on the right. Use **Up/Down** to highlight a category, **✕** to enter it and **○** to return to categories. The touchpad switches focus to the mini player and preserves your place in Settings.
+- Prospero must remain open during playback; background music during PS5 games is not supported.
+- Local M4A/AAC/ALAC and Opus playback is not supported.
+- Configuration is stored in `/data/prospero-hifi/config.json` and may contain network passwords. Do not share your personal config file.
 
-## Control Prospero Hi-Fi from a browser
+## Building
 
-Enable **Web Remote** in Settings and open the displayed address on a phone or computer on the same network:
-
-```text
-http://PS5-IP:8182
-```
-
-The Web Remote controls playback on the PS5. It provides:
-
-- Music browsing and playback from the detected storage sources, SMB shares and physical audio CDs.
-- Play/pause, stop, previous/next, seeking, volume, shuffle and repeat.
-- Now-playing information and album artwork.
-- Equalizer presets and manual adjustment.
-- Appearance, playback and other application settings.
-- Storage-folder editing and SMB-share management.
-
-The browser also offers **Screen Control**, which mirrors the current interface and lets you operate it remotely. Remote text prompts let you enter text when the PS5 opens a supported input dialog.
-
-Prospero Hi-Fi must stay open for the Web Remote to work. Playback and audio stay on the PS5; the remote does not stream audio to your browser.
-
-## Control Prospero Hi-Fi from NX Hi-Fi
-
-On your Switch, open **NX Hi-Fi > Remote** and add the PS5 using its IP address and port **8182**, or choose **Scan for remote clients**. Prospero must be running with Web Remote enabled, and both devices must be on the same network.
-
-Choose between:
-
-- **Independent control:** browse and control playback on the PS5 through NX Hi-Fi's own remote interface. Playback controls, artwork, equalizer, supported settings and source management are available through the target's capabilities.
-- **Screen Control:** follow and control Prospero's current on-screen interface, including its detected storage-source list and supported text-entry prompts.
-
-Existing NX Hi-Fi clients use their original source list in Independent control. To access the separate M.2 and USB storage entries, use **Screen Control** or the browser Web Remote.
-
-In NX Screen Control, hold **Minus for three seconds** to open the local menu. Use it to disconnect or switch modes. Disconnecting leaves music playing on the PS5.
-
-Prospero accepts incoming remote control. It does not include an outgoing Remote section for controlling another Hi-Fi instance.
-
-## Physical audio CDs
-
-Connect a USB CD/DVD drive. Once **Sources > Physical Disc** appears, insert an audio CD and open it. Use a powered hub or a separately powered drive if additional power is needed.
-
-The disc is streamed as CDDA (44.1 kHz, 16-bit stereo); no ripping or temporary audio files are required. Pause, seeking, previous/next, shuffle, repeat, EQ and the visualizer work with CDs. **Gapless audio CD playback** is enabled by default and can be changed in Settings. Data tracks on mixed-mode CDs are skipped.
-
-MusicBrainz supplies album, artist and track names from the disc's table of contents. Artwork uses Cover Art Archive, then a matching iTunes album. Metadata and artwork are cached in `/data/prospero-hifi/cd-cache/`. Offline or unknown discs use Track 01-style names. Unknown-disc results expire after seven days; network/server failures are not cached.
-
-To refresh after inserting or changing a disc, reopen Physical Disc from Sources. Read errors or drive removal stop playback and display an error. Physical Disc is also available through the browser and compatible NX remote clients.
-
-This feature uses an external USB optical drive. Compatibility depends on the drive, USB bridge and firmware; the PS5's built-in disc drive is not supported as an audio CD source.
-
-## Helpful notes
-
-- **Local format support:** M4A/AAC/ALAC and Opus are not supported for local playback. Some files may have limited seeking or an estimated duration.
-- **Missing drive:** check that the drive is connected, powered and accessible to homebrew. An empty mount directory alone does not make a storage source appear. A detected drive can be shown even if its Music folder is missing or empty.
-- **Connection problems:** check that both devices are on the same network, the address is correct and Prospero's Web Remote is enabled. The default remote port is **8182**.
-- **Settings and passwords:** configuration is stored in `/data/prospero-hifi/config.json`. It can contain saved network credentials, so do not share your personal configuration file. Leave a saved password field blank to retain it where indicated.
-- **Upgrading:** replace the complete `PPSA99287` application folder and rescan ShadowMount+. Settings and CD metadata remain in `/data/prospero-hifi/`. A previously selected combined USB music path is migrated to its separate storage source.
-
-## Building from source
-
-See `scripts/bootstrap-ps5.sh` and `Makefile.ps5` for the public-SDK build. On Linux or WSL with the required build tools installed:
+On Linux or WSL with the required build tools:
 
 ```sh
 bash scripts/bootstrap-ps5.sh
@@ -173,10 +88,10 @@ export PS5_PAYLOAD_SDK="$PWD/.deps/ps5-payload-sdk"
 make -f Makefile.ps5 -j4
 ```
 
-The ready-to-use homebrew folder is generated in `dist/PPSA99287/`. With host SDL development libraries installed, `make -f Makefile.host test-player` exercises player navigation and the fullscreen transition through the real application. See `VALIDATION.md` for build checks and console testing notes.
+The complete homebrew folder is generated in `dist/PPSA99287/`.
 
-## License
+## Credits and license
 
-Prospero Hi-Fi is developed by **Anime0t4ku** and released under [GPLv3](LICENSE). It is based on **NX Hi-Fi** and **MiSTer Hi-Fi**, with PS5SX2-derived keyboard and USB optical-drive work. Third-party components retain their own licenses and notices; see `THIRD_PARTY_NOTICES.md` and `licenses/`.
+Developed by **Anime0t4ku**, based on **NX Hi-Fi** and **MiSTer Hi-Fi**, with PS5SX2-derived keyboard and USB optical-drive work.
 
-Music and artwork are not included.
+Released under [GPLv3](LICENSE). See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for component credits and licenses. Music and artwork are not included.
