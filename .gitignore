@@ -1,0 +1,74 @@
+# Build output and downloaded SDK / library dependencies
+/build/
+/build-ps5/
+/build-host/
+/build-deps/
+/.deps/
+/dist/
+/cmake-build-*/
+/CMakeFiles/
+/CMakeCache.txt
+/cmake_install.cmake
+/compile_commands.json
+/Testing/
+
+# Generated native title files, payloads, symbols and release archives
+/*.elf
+/*.bin
+/*.prx
+/*.o
+/*.a
+/*.map
+/*.zip
+/assets/access-helper.elf
+/diagnostics/*.zip
+/diagnostics/*.elf
+/diagnostics/*.map
+
+# Legacy NX build output (the source and build scripts remain tracked)
+/*.nro
+/*.nacp
+/sd-card/
+
+# Local runtime data; configuration may contain SMB credentials
+/config.json
+/config.json.bak
+/config.json.tmp
+/data/
+/music/
+/cd-cache/
+/playback-debug*.log
+/performance.json
+/performance.json.tmp
+/diagnostics/*.log
+/diagnostics/*.json
+
+# Local environment secrets; example files can be committed
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+
+# Python caches and local virtual environments
+__pycache__/
+*.py[cod]
+/.venv/
+/venv/
+/.pytest_cache/
+
+# Personal editor files
+/.idea/
+/.vscode/
+*.swp
+*.swo
+*~
+
+# Operating system metadata
+.DS_Store
+._*
+Thumbs.db
+Desktop.ini
+
+# Keep source assets, vendored libraries, licenses and config.example.json tracked.
+# Binary patterns above are root-scoped so third-party source fixtures are retained.

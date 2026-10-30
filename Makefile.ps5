@@ -1,0 +1,53 @@
+# Prospero Hi-Fi native PS5 title. PS5_PAYLOAD_SDK includes PacBrew ports.
+.DEFAULT_GOAL := all
+PS5_PAYLOAD_SDK ?= /opt/ps5-payload-sdk
+export PS5_PAYLOAD_SDK
+CC := $(PS5_PAYLOAD_SDK)/bin/prospero-clang
+CXX := $(PS5_PAYLOAD_SDK)/bin/prospero-clang++
+LD := $(PS5_PAYLOAD_SDK)/bin/ld.lld
+HB := $(PS5_PAYLOAD_SDK)/target/user/homebrew
+BUILD := build-ps5
+TITLE := dist/PPSA99287
+HOST_CXX ?= c++
+CPPFLAGS := -DPROSPERO_PS5=1 -DSDL_MAIN_HANDLED -Iinclude -Ithird_party -Ips5/disc -I$(HB)/include -I$(HB)/include/SDL2
+CFLAGS := -O2 -g -fPIC -ffunction-sections -fdata-sections -fno-stack-protector -fno-plt -femulated-tls
+CXXFLAGS := $(CFLAGS) -std=c++17 -fexceptions -frtti
+SOURCES := $(wildcard source/*.cpp) $(wildcard ps5/disc/*.cpp) ps5/native/app_crt.cpp
+CSOURCES := source/decoder.c source/cover_codec.c source/compat.c
+OBJECTS := $(patsubst %.cpp,$(BUILD)/%.o,$(SOURCES)) $(patsubst %.c,$(BUILD)/%.o,$(CSOURCES))
+LIBS := -lSDL2_image -lpng16 -ljpeg -lwebp -lsharpyuv -lSDL2_ttf -lfreetype -lharfbuzz -lbz2 -lcurl -lpsl -lssl -lcrypto -lzstd -lsmb2 -lSDL2 -lsamplerate -liconv -lz -lm
+STUBS := $(filter-out %libkernel_web.so %libkernel_sys.so %libScePosixForWebKit.so %libc_stub_weak.so %libkernel_stub_weak.so,$(wildcard $(PS5_PAYLOAD_SDK)/target/lib/*.so))
+.PHONY: all package
+all: package
+$(BUILD)/%.o: %.cpp
+	@mkdir -p $(dir $@)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -MMD -MP -c $< -o $@
+$(BUILD)/%.o: %.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -MMD -MP -c $< -o $@
+$(BUILD)/native-tool: $(wildcard ps5/native/*cpp) $(wildcard ps5/native/*hpp)
+	@mkdir -p $(BUILD)
+	$(HOST_CXX) -std=c++20 -O2 ps5/native/native_app_builder.cpp ps5/native/elf_object.cpp ps5/native/self_container.cpp ps5/native/sce_module_writer.cpp -lz -o $@
+$(BUILD)/sdl/libSDL2.a: third_party/SDL-ps5/src/video/ps5/SDL_ps5video.c third_party/SDL-ps5/src/video/ps5/SDL_ps5keyboard.c
+	cmake -S third_party/SDL-ps5 -B $(BUILD)/sdl -DCMAKE_TOOLCHAIN_FILE=$(PS5_PAYLOAD_SDK)/toolchain/prospero.cmake -DCMAKE_BUILD_TYPE=Release -DSDL_SHARED=OFF -DSDL_STATIC=ON -DSDL_TEST=OFF -DSDL_OPENGL=OFF -DSDL_OPENGLES=OFF -DSDL_VULKAN=OFF
+	cmake --build $(BUILD)/sdl -j4
+$(BUILD)/access-helper.elf: ps5/access_helper.c
+	$(CC) -O2 $< -o $@
+$(BUILD)/app-pie.elf: $(OBJECTS) $(BUILD)/sdl/libSDL2.a Makefile.ps5
+	$(LD) -m elf_x86_64 -pie -z max-page-size=0x4000 --eh-frame-hdr --gc-sections --hash-style=gnu -T ps5/native/ps5-pie.ld -T ps5/native/ehframe.ld -e _start --no-dynamic-linker -o $@ $(OBJECTS) -L$(BUILD)/sdl -L$(HB)/lib -L$(PS5_PAYLOAD_SDK)/target/lib --start-group $(LIBS) -lc++ -lc++abi -lunwind -lc -lpthread --end-group --as-needed $(STUBS)
+$(BUILD)/eboot.elf: $(BUILD)/app-pie.elf $(BUILD)/native-tool Makefile.ps5
+	python3 tools/genmap.py $(BUILD)/app-pie.elf $(PS5_PAYLOAD_SDK)/target/lib $(BUILD)/exports.map
+	$(LD) -m elf_x86_64 -pie -z max-page-size=0x4000 --eh-frame-hdr --gc-sections --hash-style=gnu -T ps5/native/ps5-pie.ld -T ps5/native/ehframe.ld --version-script $(BUILD)/exports.map -e _start --no-dynamic-linker -o $(BUILD)/app-final.elf $(OBJECTS) -L$(BUILD)/sdl -L$(HB)/lib -L$(PS5_PAYLOAD_SDK)/target/lib --start-group $(LIBS) -lc++ -lc++abi -lunwind -lc -lpthread --end-group --as-needed $(STUBS)
+	$(BUILD)/native-tool link --in $(BUILD)/app-final.elf --out $@ --stub-dir $(PS5_PAYLOAD_SDK)/target/lib --module-sdk 0x02000009 --companion-sdk 0x08050001 --file-name eboot.elf
+$(TITLE)/eboot.bin: $(BUILD)/eboot.elf
+	@mkdir -p $(TITLE)
+	$(BUILD)/native-tool self --sign --in $< --out $@ --magic 0x1D3D154F
+$(BUILD)/libc-builder: ps5/native/libc_builder.cpp
+	$(HOST_CXX) -std=c++20 -O2 $< -o $@
+$(TITLE)/sce_module/libc.prx: $(BUILD)/libc-builder $(BUILD)/native-tool ps5/native/runtime/api-surface.txt ps5/native/runtime/imports.txt
+	@mkdir -p $(TITLE)/sce_module
+	$(BUILD)/libc-builder ps5/native/runtime/api-surface.txt ps5/native/runtime/imports.txt $(BUILD)/libc.raw.elf
+	$(BUILD)/native-tool self --sign --in $(BUILD)/libc.raw.elf --out $@
+package: $(TITLE)/eboot.bin $(BUILD)/access-helper.elf $(TITLE)/sce_module/libc.prx
+	python3 tools/package_ps5.py
+-include $(OBJECTS:.o=.d)

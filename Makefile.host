@@ -1,0 +1,16 @@
+# Optional Linux build for UI/protocol regression work (no real optical backend).
+CXX ?= c++
+BUILD := build-host/preview
+CPPFLAGS += -DSDL_MAIN_HANDLED -Iinclude -Ithird_party -Ithird_party/libsmb2/include $(HOST_EXTRA_CFLAGS)
+CXXFLAGS += -std=c++17 -O1 -pthread
+SOURCES := $(wildcard source/*.cpp)
+OBJECTS := $(patsubst source/%.cpp,$(BUILD)/%.o,$(SOURCES))
+HOST_SMB_LIB ?= -lsmb2
+HOST_EXTRA_LIBS ?= -lSDL2 -lSDL2_image -lSDL2_ttf -lpng -ljpeg -lcurl
+all: build-host/prospero-preview
+$(BUILD)/%.o: source/%.cpp
+	@mkdir -p $(BUILD)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -MMD -MP -c $< -o $@
+build-host/prospero-preview: $(OBJECTS) build-host/decoder.o build-host/cover_codec.o
+	$(CXX) -pthread $^ $(HOST_SMB_LIB) $(HOST_EXTRA_LIBS) -lm -lz -ldl -o $@
+-include $(OBJECTS:.o=.d)
