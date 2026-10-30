@@ -1,4 +1,4 @@
-# Validation — Prospero Hi-Fi v1.0.0
+# Validation — Prospero Hi-Fi v1.1.0
 
 ## Completed locally
 
@@ -62,3 +62,44 @@ The first build uses CPU SDL rendering with tiled VideoOut presentation. It incl
 
 - Focused storage tests also reject empty and populated leftover directories on the parent's filesystem and recognise a real host mount. Folder persistence/migration and browser-source tests pass after the fix.
 - Version remains v1.0.0 as requested; replace the complete previous title folder with this corrected build.
+
+## v1.1.0 player update
+
+- All fourteen C++ host regression suites passed, including audio/CDDA, cover handling, storage detection, HTTP/NX-compatible WebSocket and settings tests. Browser-source JavaScript checks passed.
+- Player focus/navigation tests cover separate menu/fullscreen rows, action mappings, bounded selection, pointer-hit geometry, Auto Fullscreen persistence/type validation and 100% defaults while preserving an existing saved 80% volume.
+- Host app integration exercises fullscreen L1/R1/Touchpad isolation, its in-player EQ preset dialog, Circle exit, seek/volume/transport focus and Auto Fullscreen on/off with a real WAV file. Subsequent track changes leave browsing open.
+- Host rendering checks inspect the actual menu/fullscreen layouts at 1080p and 4K. Screen Control retains transport-icon drawing operations and uses the same pointer geometry.
+- Native PS5 build/signing, folder validation and complete ready-folder ZIP integrity are checked. No additional raw mount syscalls are introduced.
+- Controller ergonomics and audio behaviour of this v1.1.0 build still need PS5 testing.
+
+## v1.1.1 interface update
+
+- Compact controls-only footer uses vector PS5 button symbols. The expanded menu panels display thirteen rows in the PS5 logical layout; option-dialog row counts are unchanged.
+- Playback icons are coverage-sampled and cached at the actual output scale. Screen Control receives matching icon scanline operations.
+- Metadata headings and wrapped codec-badge rows are centered; badge text is centered horizontally and vertically using font metrics.
+- Updated app integration checks Play/Pause focus on fullscreen entry, absence of the old footer explanation and fullscreen button labels, and centered badge text. Fullscreen isolation, seeking/volume navigation, EQ dialog and Auto Fullscreen behaviour are retained.
+- Native build/signing, host regression checks, actual host rendering at 1080p/4K, package verification and archive checks are performed. PS5 testing remains required.
+
+## v1.1.2 alignment correction
+
+- Restored the v1.1.0 left alignment for track title, artist, album and technical badge rows. Technical badge text remains centered inside each badge; the new large fullscreen metadata panel is removed.
+- Total duration is measured in renderer coordinates and ends at the seek bar's right endpoint in both players. This covers known, estimated and unknown duration labels.
+- App integration verifies title alignment, duration endpoints and the absence of the large fullscreen metadata panel while retaining badge text centering and player navigation tests.
+- Native build/package checks and host rendering checks are performed. Console verification remains required.
+
+## Final v1.1.0 release adjustments
+
+The 1.1.1/1.1.2 headings above describe development iterations; this work ships as the next release, v1.1.0.
+
+- Natural sorting compares digit runs without integer conversion, retains folders first and deterministic case handling, and supports long numbers and leading zeroes.
+- Fullscreen L1/R1 and L2/R2 share previous/next actions; pressing both previous/next equivalents together advances only once. Main-menu L1/R1 retain tab switching.
+- Badge layout centers cropped visible glyph bounds directly inside the rendered box, accounting for font side bearings and coordinate scaling. Pixel tests check the rendered result at multiple resolutions.
+
+- Final validation: all sixteen C++ host regression suites passed, along with the browser-source JavaScript check and application player integration tests. Pixel checks confirm balanced visible badge margins at 1080p, 1440p and 4K. The source patch is cumulative over v1.0.0 and includes all recent UI corrections.
+
+## v1.1.0 Settings categories and browser redraw
+
+- Settings now has a left category column, middle entry column and the existing right mini player. Cross enters a category; Circle returns to categories. Each category remembers its entry selection, including through mini-player focus changes. Category prefixes are removed from entry labels. Pointer/Screen Control hit targets match the new columns; the independent remote settings schema is unchanged.
+- Every frame resets clipping and explicitly clears the previous frame before painting the background. Each list row has a scoped clip to keep filename/selection rendering inside its own bounds. This targets the reported filename ghosting/flicker after returning from mini-player focus; the original PS5-only symptom has not been reproduced on desktop, so console confirmation remains required.
+- Seventeen C++ host regression suites cover all settings fields, category/entry navigation, remembered positions and the existing audio/storage/network behaviour. App integration checks actual Cross/Circle/Touchpad actions, choice dismissal, field editing and browser redraw recovery over 90 frames with playback active, focus switching, scrolling and an intentionally stale clip/poisoned previous frame. The rendered browser matches the clean reference in every comparison.
+- Native PS5 compilation/signing and package integrity checks pass. Settings is visually inspected at 1080p; existing badge pixel checks cover 1080p, 1440p and 4K. Version remains v1.1.0. No console test has been performed for this update.

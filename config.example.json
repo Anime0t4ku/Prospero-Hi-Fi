@@ -1,6 +1,6 @@
 {
   "music_root": "/data/music",
-  "volume": 80,
+  "volume": 100,
   "shuffle": false,
   "repeat": 0,
   "eq_enabled": false,
@@ -26,5 +26,6 @@
   "remote_enabled": true,
   "remote_port": 8182,
   "remote_clients": [],
-  "storage_folders": {}
+  "storage_folders": {},
+  "auto_fullscreen": false
 }

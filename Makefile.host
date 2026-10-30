@@ -14,3 +14,13 @@ $(BUILD)/%.o: source/%.cpp
 build-host/prospero-preview: $(OBJECTS) build-host/decoder.o build-host/cover_codec.o
 	$(CXX) -pthread $^ $(HOST_SMB_LIB) $(HOST_EXTRA_LIBS) -lm -lz -ldl -o $@
 -include $(OBJECTS:.o=.d)
+
+# Exercise the real application input/draw path with SDL dummy output.
+$(BUILD)/app_player_test.o: tests/app_player_test.cpp source/main.cpp $(wildcard include/*.hpp include/*.inc)
+	@mkdir -p $(BUILD)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -MMD -MP -c $< -o $@
+build-host/prospero-player-test: $(BUILD)/app_player_test.o $(filter-out $(BUILD)/main.o,$(OBJECTS)) build-host/decoder.o build-host/cover_codec.o
+	$(CXX) -pthread $^ $(HOST_SMB_LIB) $(HOST_EXTRA_LIBS) -lm -lz -ldl -o $@
+.PHONY: test-player
+test-player: build-host/prospero-player-test
+	./build-host/prospero-player-test

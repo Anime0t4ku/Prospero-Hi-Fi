@@ -11,7 +11,7 @@
 #include <vector>
 
 namespace nxh {
-constexpr const char *Version = "1.0.0";
+constexpr const char *Version = "1.1.0";
 struct Share {
     std::string name, server, share, folder, user, password, domain;
     bool guest = false;
@@ -29,7 +29,8 @@ struct Settings {
     bool preferFolderArt = false, visualizer = true, rememberShuffleRepeat = true;
     bool wrapNavigation = true, holdRepeat = true, remoteEnabled = true;
     int screensaverSeconds = 0, remotePort = 8182;
-    int volume = 80;
+    int volume = 100;
+    bool autoFullscreen = false;
     bool shuffle = false, gaplessPlayback = true;
     int repeat = 0;
     bool eqEnabled = false;

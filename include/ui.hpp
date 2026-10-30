@@ -1,4 +1,5 @@
 #pragma once
+#include "player_icons.hpp"
 #include "core.hpp"
 #include "layout.hpp"
 #include "cover_image.hpp"
@@ -7,6 +8,7 @@
 #include <SDL_image.h>
 #include <SDL_ttf.h>
 #include <unordered_map>
+#include <cstring>
 namespace nxh {
 struct Color {
     Uint8 r, g, b, a = 255;
@@ -123,6 +125,10 @@ class UI {
         int w, h;
     };
     std::unordered_map<std::string, Label> labels_;
+    struct BadgeLabel{SDL_Texture *texture;int width,height,left,inkWidth;};
+    std::unordered_map<std::string,BadgeLabel> badgeLabels_;
+    struct Icon{SDL_Texture *texture;std::vector<std::array<int,3>> runs;};
+    std::unordered_map<std::string,Icon> icons_;
     std::unordered_map<std::string, int> measuredWidths_;
     std::unordered_map<std::string, std::string> fittedText_;
     struct Marquee {
@@ -132,6 +138,23 @@ class UI {
     std::unordered_map<std::string, Marquee> marquees_;
 
   public:
+    // Save/restore the renderer clip, including when a row creates new text textures.
+    class Clip {
+        SDL_Renderer *renderer_;
+        SDL_Rect previous_{};
+        bool enabled_;
+      public:
+        Clip(UI &ui, int x, int y, int w, int h) : renderer_(ui.r_),
+            enabled_(SDL_RenderIsClipEnabled(renderer_)) {
+            SDL_RenderGetClipRect(renderer_, &previous_);
+            SDL_Rect clip{ui.renderX(x), y, ui.renderX(x+w)-ui.renderX(x), h};
+            if (enabled_) SDL_IntersectRect(&clip, &previous_, &clip);
+            SDL_RenderSetClipRect(renderer_, &clip);
+        }
+        Clip(const Clip &) = delete;
+        Clip &operator=(const Clip &) = delete;
+        ~Clip() { SDL_RenderSetClipRect(renderer_, enabled_ ? &previous_ : nullptr); }
+    };
     UI(SDL_Renderer *r, const void *data, size_t size) : r_(r), fontData_(data), fontSize_(size) {}
     ~UI() {
         SDL_DestroyTexture(backdrop_);
@@ -238,6 +261,8 @@ class UI {
         return layout_.designX(x);
     }
     void clear() {
+        for(auto &entry:badgeLabels_)SDL_DestroyTexture(entry.second.texture);badgeLabels_.clear();
+        for(auto &entry:icons_)SDL_DestroyTexture(entry.second.texture);icons_.clear();
         measuredWidths_.clear();fittedText_.clear();
         for (auto &v : labels_)
             SDL_DestroyTexture(v.second.texture);
@@ -260,6 +285,10 @@ class UI {
         } else SDL_RenderFillRect(r_, &a);
         if (recording_)
             record({0, a.x, a.y, a.w, a.h, color.r, color.g, color.b, color.a});
+    }
+    void roundedRect(int x,int y,int w,int h,Color color,int radius=12){
+        SDL_Rect box{renderX(x),y,renderX(x+w)-renderX(x),h};fillRounded(box,color,radius);
+        if(recording_)record({0,box.x,box.y,box.w,box.h,color.r,color.g,color.b,color.a});
     }
     int textWidth(const std::string &value, int size) {
         const auto key=std::to_string(size)+":"+(nativeCoordinates_?"native:":"design:")+value;
@@ -360,7 +389,11 @@ class UI {
         SDL_RenderSetClipRect(r_, clipped ? &previous : nullptr);
     }
     void begin() {
-
+        // Always discard the previous frame, even if an earlier view left a clip.
+        // The PS5 software renderer must not retain glyph pixels between selections.
+        SDL_RenderSetClipRect(r_, nullptr);
+        SDL_SetRenderDrawColor(r_, BG.r, BG.g, BG.b, 255);
+        SDL_RenderClear(r_);
         screenOps_ = nlohmann::json::array();
         screenCover_.clear();
         if (recording_)
@@ -400,13 +433,57 @@ class UI {
             rect(x, y, 4, h, ACCENT);
         text(x + 14, y + (h - 22) / 2 - 2, label, 20, focus ? ACCENT : TEXT, w - 24);
     }
+    void rightText(int right,int y,const std::string &value,int size,Color color){
+        // Measure and place in logical renderer coordinates to avoid horizontal
+        // design-coordinate rounding or unused space in a fixed-width label box.
+        int edge=renderX(right);NativeCoordinates coordinates(nativeCoordinates_);
+        text(edge-textWidth(value,size),y,value,size,color);
+    }
+    void centeredText(int x,int y,int w,int h,const std::string &value,int size,Color color){
+        auto *face=font(size);if(!face)return;
+        int tw=std::min(w,textWidth(value,size)),th=fontUnits(TTF_FontHeight(face));
+        text(x+(w-tw)/2,y+(h-th)/2,value,size,color,w);
+    }
+    void centeredMarquee(int x,int y,int w,const std::string &value,int size,Color color,const std::string &key){
+        if(textWidth(value,size)<=w)centeredText(x,y,w,size+18,value,size,color);
+        else marquee(x,y,value,size,color,w,key);
+    }
+    int padHint(int x,int y,const std::string &button,const std::string &label){
+        int id=button=="Cross"?20:button=="Circle"?21:button=="Triangle"?22:button=="Square"?23:button=="Dpad"?24:button=="Options"?25:button=="Touchpad"?26:button=="R3"?27:28;
+        int size=24;transportIcon(x+12,y+12,size,id,false,TEXT,false);
+        if(id==27||id==28)centeredText(x,y+2,24,20,button,8,TEXT);
+        text(x+25,y+2,label,13,MUTED);
+        return x+25+textWidth(label,13)+18;
+    }
     void badge(int x, int y, int w, int h, const std::string &label, int size) {
         rect(x, y, w, h, PANEL);
         rect(x, y, w, 1, LINE);
         rect(x, y + h - 1, w, 1, LINE);
         rect(x, y, 1, h, LINE);
         rect(x + w - 1, y, 1, h, LINE);
-        text(x + 10, y + 5, label, size, TEXT, w - 20);
+        auto *face=font(size);if(!face)return;
+        auto key=std::to_string(size)+":"+std::to_string(TEXT.r)+":"+std::to_string(TEXT.g)+":"+std::to_string(TEXT.b)+":"+label;
+        auto found=badgeLabels_.find(key);
+        if(found==badgeLabels_.end()){
+            auto *surface=TTF_RenderUTF8_Blended(face,label.c_str(),{TEXT.r,TEXT.g,TEXT.b,TEXT.a});if(!surface)return;
+            int left=surface->w,right=-1;
+            for(int yy=0;yy<surface->h;yy++)for(int xx=0;xx<surface->w;xx++){
+                Uint32 pixel=0;std::memcpy(&pixel,(Uint8*)surface->pixels+yy*surface->pitch+xx*surface->format->BytesPerPixel,surface->format->BytesPerPixel);
+                Uint8 red,green,blue,alpha;SDL_GetRGBA(pixel,surface->format,&red,&green,&blue,&alpha);
+                if(alpha){left=std::min(left,xx);right=std::max(right,xx);}
+            }
+            if(right<left){SDL_FreeSurface(surface);return;}
+            BadgeLabel item{SDL_CreateTextureFromSurface(r_,surface),surface->w,surface->h,left,right-left+1};SDL_FreeSurface(surface);if(!item.texture)return;
+            found=badgeLabels_.emplace(key,item).first;
+        }
+        // Centre the visible glyphs inside the actual rendered box, not font advance
+        // width in design units. Font side bearings and conversion rounding no longer bias it.
+        auto &item=found->second;int bx=renderX(x),bw=renderX(x+w)-bx;
+        int tw=fontUnits(item.inkWidth),th=fontUnits(item.height);
+        SDL_Rect source{item.left,0,item.inkWidth,item.height};
+        SDL_FRect dest{bx+(bw-tw)*.5f,float(y+(h-th)/2),float(tw),float(th)};
+        SDL_RenderCopyF(r_,item.texture,&source,&dest);
+        if(recording_)record({1,int(std::lround(dest.x))-fontUnits(item.left),int(dest.y),label,size,TEXT.r,TEXT.g,TEXT.b,TEXT.a,0,nullptr});
     }
     void line(int x0, int y0, int x1, int y1, int thick, Color c) {
         x0 = renderX(x0);
@@ -429,72 +506,25 @@ class UI {
             }
         }
     }
-    // Same geometric transport shapes as MiSTer Hi-Fi's framebuffer controls.
-    void transportIcon(int cx, int cy, int size, int icon, bool playing, Color c, bool one) {
-        cx = renderX(cx);
-        NativeCoordinates coordinates(nativeCoordinates_);
-        int h = size / 2, t = std::max(2, size / 12);
-        if (icon == 1) {
-            if (playing) {
-                int w = std::max(3, size / 5), gap = std::max(3, size / 7);
-                rect(cx - gap / 2 - w, cy - h, w, size, c);
-                rect(cx + gap / 2, cy - h, w, size, c);
-            } else
-                for (int y = -h; y <= h; y++)
-                    rect(cx - h / 3, cy + y, std::max(1, h - std::abs(y)), 2, c);
-        } else if (icon == 0 || icon == 2) {
-            int bar = std::max(2, size / 9), bx = h - bar, tri = size * 2 / 5;
-            rect(icon == 2 ? cx + bx : cx - bx - bar, cy - h, bar, size, c);
-            for (int y = -h; y < h; y++) {
-                int w = std::max(1, tri - tri * std::abs(y) / std::max(1, h));
-                rect(icon == 2 ? cx - tri / 2 : cx + tri / 2 - w, cy + y, w, 2, c);
+    // Cached antialiased vector icons at the actual framebuffer scale.
+    void transportIcon(int cx,int cy,int size,int icon,bool playing,Color color,bool one){
+        auto key=std::to_string(icon)+":"+std::to_string(size)+":"+std::to_string(int(fontScale()*100))+":"+std::to_string(color.r)+":"+std::to_string(color.g)+":"+std::to_string(color.b)+":"+std::to_string(playing)+":"+std::to_string(one);
+        auto found=icons_.find(key);
+        if(found==icons_.end()){
+            auto shape=playerIconShape(icon,playing,one);int pixels=std::max(16,int(std::ceil(size*fontScale())));
+            auto *surface=SDL_CreateRGBSurfaceWithFormat(0,pixels,pixels,32,SDL_PIXELFORMAT_RGBA32);if(!surface)return;
+            for(int y=0;y<pixels;y++)for(int x=0;x<pixels;x++){
+                int coverage=0;for(int sy=0;sy<4;sy++)for(int sx=0;sx<4;sx++)coverage+=shape.hit((x+(sx+.5f)/4)/pixels,(y+(sy+.5f)/4)/pixels);
+                auto *pixel=(Uint32*)((Uint8*)surface->pixels+y*surface->pitch)+x;*pixel=SDL_MapRGBA(surface->format,color.r,color.g,color.b,coverage*255/16);
             }
-        } else if (icon == 3)
-            rect(cx - h, cy - h, size, size, c);
-        else if (icon == 4 || icon == 5) {
-            int l = cx - h, r = cx + h, top = cy - size / 3, bot = cy + size / 3;
-            if (icon == 4) {
-                line(l, top, cx - size / 8, top, t, c);
-                line(cx - size / 8, top, cx + size / 8, bot, t, c);
-                line(cx + size / 8, bot, r - size / 8, bot, t, c);
-                line(l, bot, cx - size / 8, bot, t, c);
-                line(cx - size / 8, bot, cx + size / 8, top, t, c);
-                line(cx + size / 8, top, r - size / 8, top, t, c);
-                for (int y : {top, bot}) {
-                    line(r - size / 8, y, r - size / 4, y - size / 8, t, c);
-                    line(r - size / 8, y, r - size / 4, y + size / 8, t, c);
-                }
-            } else {
-                line(l + size / 8, top, r - size / 8, top, t, c);
-                line(r - size / 8, top, r - size / 4, top - size / 8, t, c);
-                line(r - size / 8, top, r - size / 4, top + size / 8, t, c);
-                line(r - size / 8, bot, l + size / 8, bot, t, c);
-                line(l + size / 8, bot, l + size / 4, bot - size / 8, t, c);
-                line(l + size / 8, bot, l + size / 4, bot + size / 8, t, c);
-                line(r - size / 8, top, r, cy, t, c);
-                line(r, cy, r - size / 8, bot, t, c);
-                line(l + size / 8, bot, l, cy, t, c);
-                line(l, cy, l + size / 8, top, t, c);
-                if (one)
-                    text(cx - 4, cy - 10, "1", 14, c);
-            }
-        } else if (icon == 6 || icon == 7) {
-            // Seek uses the same triangle shape, doubled.
-            for (int off : {-7, 7})
-                for (int y = -h; y < h; y++) {
-                    int w = std::max(1, h - std::abs(y));
-                    rect(icon == 7 ? cx + off - 5 : cx + off + 5 - w, cy + y, w, 2, c);
-                }
-        } else {
-            int u = std::max(1, size / 12);
-            rect(cx - h, cy - size / 6, size / 4, size / 3, c);
-            line(cx - size / 4, cy - size / 6, cx, cy - size / 3, u, c);
-            line(cx, cy - size / 3, cx, cy + size / 3, u, c);
-            line(cx, cy + size / 3, cx - size / 4, cy + size / 6, u, c);
-            line(cx + size / 3 - size / 8, cy, cx + size / 3 + size / 8, cy, u, c);
-            if (icon == 9)
-                line(cx + size / 3, cy - size / 8, cx + size / 3, cy + size / 8, u, c);
+            Icon item{SDL_CreateTextureFromSurface(r_,surface),{}};SDL_FreeSurface(surface);if(!item.texture)return;
+            SDL_SetTextureBlendMode(item.texture,SDL_BLENDMODE_BLEND);
+            // The NX Screen Control protocol represents icons with short scanline runs.
+            for(int y=0;y<size;y++){int first=-1;for(int x=0;x<=size;x++){bool hit=x<size&&shape.hit((x+.5f)/size,(y+.5f)/size);if(hit&&first<0)first=x;if(!hit&&first>=0){item.runs.push_back({first,y,x-first});first=-1;}}}
+            found=icons_.emplace(key,std::move(item)).first;
         }
+        SDL_Rect dst{renderX(cx)-size/2,cy-size/2,size,size};SDL_RenderCopy(r_,found->second.texture,nullptr,&dst);
+        if(recording_)for(auto &run:found->second.runs)record({0,dst.x+run[0],dst.y+run[1],run[2],1,color.r,color.g,color.b,color.a});
     }
     SDL_Texture *cover(const std::vector<unsigned char> &bytes,
                        std::vector<unsigned char> *remoteBytes = nullptr) {

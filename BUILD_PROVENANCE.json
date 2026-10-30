@@ -1,6 +1,6 @@
 {
   "app": "Prospero Hi-Fi",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "baseline": "NX-HI-FI(4).zip / NX Hi-Fi 1.1.0",
   "ps5sx2_commit": "bea3c2e8420934aad24d5665eb75b8a6e462d452",
   "sdl_commit": "ee4c47dc0d617b3bc8f35108f9956baf228a1322",
@@ -8,5 +8,7 @@
   "sdk_version": "0.45",
   "ports_version": "0.41.1",
   "compiler": "Clang 19.1.7",
-  "console_tested": false
+  "console_tested": false,
+  "player_reference": "MiSTer_Hi-Fi(20261030-155151).zip",
+  "player_reference_sha256": "7333698865718a82aa6bef65689130d5d7aab221de22d0e631c931d9e85ba1fc"
 }

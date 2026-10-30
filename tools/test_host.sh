@@ -11,9 +11,13 @@ flags=(-std=c++17 -O1 -g -pthread -Iinclude -Ithird_party -Ithird_party/libsmb2/
 "$cxx" "${flags[@]}" -c source/core.cpp -o build-host/core.o
 build_run(){ local name=$1;shift; "$cxx" "${flags[@]}" "tests/${name}_test.cpp" "$@" -o "build-host/$name"; "build-host/$name"; }
 build_run core build-host/core.o build-host/decoder.o -lm -ldl
+build_run natural_sort build-host/core.o
+build_run badge_layout build-host/core.o "${libs[@]}"
 build_run disc source/disc_metadata.cpp build-host/core.o
 build_run storage_devices source/storage_devices.cpp source/optical_detection.cpp build-host/core.o
 build_run layout
+build_run player_navigation build-host/core.o
+build_run settings_navigation build-host/core.o
 build_run input_timing
 build_run keyboard source/keyboard.cpp build-host/core.o "${libs[@]}"
 build_run platform_network -D__PROSPERO__ source/platform.cpp "${libs[@]}"

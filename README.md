@@ -26,6 +26,24 @@ The current target setup is **PS5 firmware 13.60 with Y2JB and ShadowMount+**. O
 
 For network features, connect your PS5 through its system settings first. Existing settings are kept when you replace the application folder. Use the ready-to-use folder download for installation; the source ZIP is for development.
 
+## v1.1.0 player update
+
+The menu player has a larger Play/Pause button, focusable seek and volume controls, and a compact footer with PS5 button symbols. The track list and mini-player panels use the space freed by the smaller footer. Playback icons use smooth vector graphics.
+
+Track title, artist and album remain left-aligned. Text inside technical badges such as FLAC, bit depth and sample rate is centered on its visible glyphs. Total duration ends beneath the seek bar's right endpoint in both players.
+
+The file browser uses natural, case-insensitive sorting: folders come first, with names such as Track 2 before Track 10. This applies to local storage and SMB shares.
+
+Fullscreen opens with Play/Pause highlighted and has no labels underneath its playback buttons. Both L1/R1 and L2/R2 skip tracks in fullscreen; L1/R1 still switch tabs in the main menu. Circle returns to browsing. The fullscreen Equalizer shortcut opens an in-player preset dialog.
+
+## Player controls
+
+The menu player has Previous, a larger Play/Pause button and Next, with Stop, Shuffle, Repeat and Fullscreen on a secondary row. The seek bar and volume slider can be highlighted and adjusted with the D-pad. Touchpad switches between browsing and the player, remembering the player's last focused control.
+
+Fullscreen uses a separate MiSTer Hi-Fi-style layout: artwork and metadata, seek bar, volume strip and a transport row with an Equalizer preset dialog that keeps you in fullscreen. L1/R1 do not switch tabs in fullscreen. Circle closes fullscreen and returns to browsing.
+
+**Settings > Playback > Auto Fullscreen** opens fullscreen when you select a track. It is off by default. Automatic track changes leave your current view unchanged. The default volume for new configurations is **100%**; existing saved volumes are retained.
+
 ## Playing music
 
 Play supported music files from Internal Storage, M.2 Storage, USB storage or an SMB network share.
@@ -40,10 +58,10 @@ The interface scales to the PS5's active output resolution. Prospero Hi-Fi must 
 
 | DualSense control | Action |
 | --- | --- |
-| L1 / R1 | Switch sections |
+| L1 / R1 | Switch sections while browsing; previous/next track in fullscreen |
 | D-pad / left stick | Move through lists |
-| Cross / Circle | Select / Back |
-| Left / Right | Jump through lists, adjust EQ, or select a player control |
+| Cross / Circle | Select / Back; Circle closes fullscreen |
+| Left / Right | Jump through lists, adjust EQ, select a player button, or adjust the highlighted seek/volume slider |
 | Options | Play / Pause |
 | L2 / R2 | Previous / Next song |
 | Square | Toggle shuffle |
@@ -51,7 +69,7 @@ The interface scales to the PS5's active output resolution. Prospero Hi-Fi must 
 | R3 | Open or close fullscreen |
 | Triangle | Edit the selected source; otherwise stop playback |
 
-While player controls are focused, Up/Down seeks in five-second steps. On-screen hints show the controls available on each screen.
+While player controls are focused, Up/Down moves between control rows. Left/Right seeks in ten-second steps when the seek bar is highlighted, or adjusts volume in five-percent steps when the volume strip is highlighted. Hold a direction to repeat. Circle returns to browsing. On-screen hints identify the focused control.
 
 ### On-screen keyboard
 
@@ -86,6 +104,8 @@ Artwork is read from supported MP3 and FLAC files. You can also place `cover.jpg
 Settings includes Light, Dark and OLED themes, accent colours, artwork preferences, a visualizer, a clock and a screensaver. **Blue is the default accent colour.** The Equalizer section provides presets and manual adjustment of five frequency bands.
 
 Settings are saved automatically. The screensaver turns the display black while playback continues; press a button to wake it.
+
+Settings uses a category menu on the left, the selected category's entries in the middle and the mini player on the right. Use **Up/Down** to highlight a category, **✕** to enter it and **○** to return to categories. The touchpad switches focus to the mini player and preserves your place in Settings.
 
 ## Control Prospero Hi-Fi from a browser
 
@@ -153,7 +173,7 @@ export PS5_PAYLOAD_SDK="$PWD/.deps/ps5-payload-sdk"
 make -f Makefile.ps5 -j4
 ```
 
-The ready-to-use homebrew folder is generated in `dist/PPSA99287/`. See `VALIDATION.md` for build checks and console testing notes.
+The ready-to-use homebrew folder is generated in `dist/PPSA99287/`. With host SDL development libraries installed, `make -f Makefile.host test-player` exercises player navigation and the fullscreen transition through the real application. See `VALIDATION.md` for build checks and console testing notes.
 
 ## License
 

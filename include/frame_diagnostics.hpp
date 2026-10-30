@@ -20,7 +20,7 @@ struct FrameDiagnostics {
         frames++;Uint64 now=SDL_GetTicks64();if(!first)first=now;
         if(now-first<2000)return;
         int w=0,h=0;SDL_GetRendererOutputSize(r,&w,&h);
-        nlohmann::json data={{"version","1.0.0"},{"view",view},{"width",w},{"height",h},{"fps",frames*1000./(now-first)}};
+        nlohmann::json data={{"version","1.1.0"},{"view",view},{"width",w},{"height",h},{"fps",frames*1000./(now-first)}};
         const char *names[]={"display_poll_ms","input_ms","update_ms","draw_enqueue_ms","cpu_raster_ms","present_ms"};
         for(size_t i=0;i<sum.size();i++)data[names[i]]={{"average",sum[i]/frames},{"max",peak[i]}};
         const char *tmp="/data/prospero-hifi/performance.json.tmp";
