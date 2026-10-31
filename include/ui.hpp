@@ -388,6 +388,14 @@ class UI {
         text(x - offset, y, value, size, color);
         SDL_RenderSetClipRect(r_, clipped ? &previous : nullptr);
     }
+    void paintBackground(){
+        if(backdrop_)SDL_RenderCopy(r_,backdrop_,nullptr,nullptr);
+        else{SDL_SetRenderDrawColor(r_,BG.r,BG.g,BG.b,255);SDL_RenderClear(r_);}
+    }
+    // Stock bars for screen-control clients, with no local raster work.
+    void recordOnlyRect(int x,int y,int w,int h,Color c){
+        if(recording_)record({0,renderX(x),y,renderX(x+w)-renderX(x),h,c.r,c.g,c.b,c.a});
+    }
     void begin() {
         // Always discard the previous frame, even if an earlier view left a clip.
         // The PS5 software renderer must not retain glyph pixels between selections.
@@ -484,6 +492,17 @@ class UI {
         SDL_FRect dest{bx+(bw-tw)*.5f,float(y+(h-th)/2),float(tw),float(th)};
         SDL_RenderCopyF(r_,item.texture,&source,&dest);
         if(recording_)record({1,int(std::lround(dest.x))-fontUnits(item.left),int(dest.y),label,size,TEXT.r,TEXT.g,TEXT.b,TEXT.a,0,nullptr});
+    }
+    // Batched raster line for local visualizers; screen clients receive stock bars.
+    void visualizerLine(int x0,int y0,int x1,int y1,Color c){
+        float ax=renderX(x0),bx=renderX(x1),ay=y0,by=y1;
+        float dx=bx-ax,dy=by-ay,length=std::sqrt(dx*dx+dy*dy);
+        if(length<.01f){rect(x0,y0,1,1,c);return;}
+        // A narrow quad stays continuous with SDL's fractional output scaling.
+        float nx=-dy/length*.7f,ny=dx/length*.7f;SDL_Color color{c.r,c.g,c.b,c.a};
+        SDL_Vertex vertices[]={{{ax+nx,ay+ny},color,{0,0}},{{bx+nx,by+ny},color,{0,0}},
+                               {{bx-nx,by-ny},color,{0,0}},{{ax-nx,ay-ny},color,{0,0}}};
+        int indices[]={0,1,2,0,2,3};SDL_RenderGeometry(r_,nullptr,vertices,4,indices,6);
     }
     void line(int x0, int y0, int x1, int y1, int thick, Color c) {
         x0 = renderX(x0);

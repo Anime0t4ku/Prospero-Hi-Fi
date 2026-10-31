@@ -31,5 +31,9 @@
   "listening_hide_title": true,
   "listening_hide_clock": true,
   "listening_hide_metadata": true,
-  "listening_hide_footer": true
+  "listening_hide_footer": true,
+  "visualizer_style": 0,
+  "visualizer_sensitivity": 100,
+  "visualizer_smoothing": 65,
+  "visualizer_expand": true
 }

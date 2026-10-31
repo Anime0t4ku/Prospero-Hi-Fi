@@ -157,6 +157,8 @@ nlohmann::json settingsDocument(const Settings &s, bool secrets) {
             {"hide_missing_art", s.hideMissingArt},
             {"prefer_folder_art", s.preferFolderArt},
             {"visualizer", s.visualizer},
+            {"visualizer_style",s.visualizerStyle},{"visualizer_sensitivity",s.visualizerSensitivity},
+            {"visualizer_smoothing",s.visualizerSmoothing},{"visualizer_expand",s.visualizerExpand},
             {"remember_shuffle_repeat", s.rememberShuffleRepeat},
             {"gapless_playback", s.gaplessPlayback},
             {"wrap_navigation", s.wrapNavigation},
@@ -193,6 +195,10 @@ nlohmann::json settingFields() {
     add("hide_missing_art", "Hide missing artwork placeholder", "Artwork", "bool");
     add("prefer_folder_art", "Prefer folder artwork", "Artwork", "bool");
     add("visualizer", "Show visualizer", "Visualizer", "bool");
+    add("visualizer_style", "Fullscreen style", "Visualizer", "choice", {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18});
+    add("visualizer_sensitivity", "Sensitivity (%)", "Visualizer", "choice", {50,75,100,125,150,200});
+    add("visualizer_smoothing", "Smoothing (%)", "Visualizer", "choice", {0,35,65,85});
+    add("visualizer_expand", "Select to expand (local fullscreen)", "Visualizer", "bool");
     add("listening_hide_title", "Hide app title and version", "Listening Mode", "bool");
     add("listening_hide_clock", "Hide clock", "Listening Mode", "bool");
     add("listening_hide_metadata", "Hide technical metadata", "Listening Mode", "bool");
@@ -261,6 +267,20 @@ bool patchSettings(Settings &s, const nlohmann::json &patch, std::string &error)
                 return false;
             }
             *flag = v.get<bool>();
+            continue;
+        }
+        if(key=="visualizer_expand"){
+            if(!v.is_boolean()){error="Expected a boolean: "+key;return false;}
+            next.visualizerExpand=v.get<bool>();continue;
+        }
+        if(key=="visualizer_style"||key=="visualizer_sensitivity"||key=="visualizer_smoothing"){
+            if(!v.is_number_integer()){error="Expected an integer: "+key;return false;}
+            auto n=v.get<int64_t>();int lo=key=="visualizer_sensitivity"?50:0;
+            int hi=key=="visualizer_style"?18:key=="visualizer_sensitivity"?200:95;
+            if(n<lo||n>hi){error="Visualizer value out of range.";return false;}
+            if(key=="visualizer_style")next.visualizerStyle=int(n);
+            else if(key=="visualizer_sensitivity")next.visualizerSensitivity=int(n);
+            else next.visualizerSmoothing=int(n);
             continue;
         }
         if(key=="storage_folders"){

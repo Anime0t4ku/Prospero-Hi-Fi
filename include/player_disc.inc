@@ -89,7 +89,7 @@ void Player::decodeDisc(Track track, uint64_t gen) {
                 std::lock_guard<std::mutex> lock(mutex_);
                 if (generation_ == gen) {
                     state_.playing = state_.busy = false;state_.ended = true;
-                    state_.position = state_.duration;state_.spectrum = {};
+                    state_.position = state_.duration;state_.spectrum = {};state_.waveLeft={};state_.waveRight={};
                 }
                 return;
             }
@@ -154,6 +154,10 @@ void Player::decodeDisc(Track track, uint64_t gen) {
                 state_.error = "Could not queue CD audio.";state_.playing = state_.busy = false;return;
             }
             decoded += frames;state_.spectrum = spectrum;
+            for(size_t i=0;i<256;i++){
+                state_.waveLeft[i]=settings.visualizer&&i<frames?samples[i*2]:0;
+                state_.waveRight[i]=settings.visualizer&&i<frames?samples[i*2+1]:0;
+            }
             if (!started && SDL_GetQueuedAudioSize(device_) >= 44100 * 2 * sizeof(float) * 0.35) {
                 started = true;state_.busy = false;state_.playing = true;
                 SDL_PauseAudioDevice(device_, state_.paused);

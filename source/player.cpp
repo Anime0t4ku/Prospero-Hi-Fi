@@ -92,7 +92,7 @@ void Player::stop() {
     seek_ = -1;
     state_.playing = state_.busy = state_.paused = state_.ended = false;
     state_.position = 0;
-    state_.spectrum = {};
+    state_.spectrum = {};state_.waveLeft={};state_.waveRight={};
     state_.error.clear();
     if (device_) {
         SDL_PauseAudioDevice(device_, 1);
@@ -307,7 +307,7 @@ void Player::decode(Track track, uint64_t gen) {
                     state_.playing = false;
                     state_.ended = true;
                     state_.position = decoded / 44100.;
-                    state_.spectrum = {};
+                    state_.spectrum = {};state_.waveLeft={};state_.waveRight={};
                 }
                 return;
             }
@@ -375,6 +375,10 @@ void Player::decode(Track track, uint64_t gen) {
                 0.,
                 (double(decoded) - SDL_GetQueuedAudioSize(device_) / (2 * sizeof(float))) / 44100.);
             state_.spectrum = spectrum;
+            for(size_t i=0;i<256;i++){
+                state_.waveLeft[i]=settings.visualizer&&i<frames?samples[i*2]:0;
+                state_.waveRight[i]=settings.visualizer&&i<frames?samples[i*2+1]:0;
+            }
             if (!started) {
                 started = true;
                 state_.busy = false;

@@ -15,6 +15,8 @@ struct Playback {
     bool busy = false, playing = false, paused = false, ended = false;
     std::string error;
     std::array<float, 32> spectrum{};
+    // Local visualizers only: real post-EQ stereo PCM, never sent to remote clients.
+    std::array<float,256> waveLeft{}, waveRight{};
 };
 class Player {
     SDL_AudioDeviceID device_ = 0;

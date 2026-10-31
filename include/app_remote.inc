@@ -428,7 +428,7 @@ void finishFrame(bool present = true) {
     }
     if (present) {
         auto start=SDL_GetPerformanceCounter();
-        SDL_RenderFlush(renderer);
+        if(SDL_RenderFlush(renderer)!=0)frameDiagnostics.renderError=SDL_GetError();
         auto flushed=SDL_GetPerformanceCounter();
         SDL_RenderPresent(renderer);
         frameDiagnostics.flushTicks=flushed-start;

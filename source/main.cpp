@@ -1,5 +1,6 @@
 #include "input_timing.hpp"
 #include "player_navigation.hpp"
+#include "visualizer.hpp"
 #include "settings_navigation.hpp"
 #include "storage_devices.hpp"
 #include "frame_diagnostics.hpp"
@@ -177,7 +178,12 @@ class App {
     PlayerRect seekRect()const{return playerSeekRect(fullscreen,layout().extraHeight(),playerX(),playerWidth());}
     PlayerRect volumeRect()const{return playerVolumeRect(fullscreen,layout().extraHeight(),playerX(),playerWidth());}
     void syncPlayerFocus(){seekerFocused=(fullscreen||controlsFocused)&&playerFocus().seek();control=std::max(0,playerFocus().action(fullscreen));}
-    void playerVertical(int delta){playerFocus().vertical(fullscreen,delta);syncPlayerFocus();}
+    void playerVertical(int delta){
+        if(fullscreen&&canExpandVisualizer()&&fullFocus.row==0&&delta<0)fullFocus.row=-1;
+        else if(fullscreen&&fullFocus.row==-1){if(delta>0)fullFocus={0,0};}
+        else playerFocus().vertical(fullscreen,delta);
+        syncPlayerFocus();
+    }
     void playerHorizontal(int delta){
         if(playerFocus().seek())player.seek(delta*10);
         else if(playerFocus().volume(fullscreen)){settings.volume=std::clamp(settings.volume+delta*5,0,100);persist();}
@@ -186,11 +192,8 @@ class App {
     }
     void playerAction(){
         int action=playerFocus().action(fullscreen);
-        if(action==6){
-            std::vector<nlohmann::json> values{-1};std::vector<std::string> labels{"Off"};int current=-1;
-            for(int i=0;i<int(presets.size());i++){values.push_back(i);labels.push_back(presets[i].name);if(settings.eqEnabled&&settings.eq==presets[i].gains)current=i;}
-            choose("Equalizer preset",values,labels,current,[this](auto v){int index=v.template get<int>();settings.eqEnabled=index>=0;if(index>=0)settings.eq=presets[index].gains;persist();});
-        }
+        if(fullscreen&&fullFocus.row==-1){if(canExpandVisualizer())visualizerFullscreen=true;return;}
+        if(action==6){playerSettingsOpen=true;playerSettingsTab=0;playerSettingsRow=-1;}
         else if(action==7)toggleFullscreen();
         else if(action>=0)transport(action);
     }
@@ -298,7 +301,7 @@ class App {
                 std::clamp((x - seekRect().x) / double(seekRect().w), 0., 1.) * p.duration;
     }
     bool beginScrub(int x, int y) {
-        if(listening)return false;
+        if(listening||playerSettingsOpen||visualizerFullscreen||optionApply)return false;
         auto p = player.snapshot();
         if (!scrubHit(x, y) || p.duration <= 0 || (!p.playing && !p.busy))
             return false;
@@ -321,6 +324,7 @@ class App {
         mouseScrub = false;
     }
     bool fullscreen = false;
+#include "app_visualizer.inc"
     bool listening=false;
     u64 listeningBlocked=0;
     void setListening(bool enabled){
@@ -330,6 +334,7 @@ class App {
     }
     void toggleFullscreen() {
         if(colourPicking)return;
+        visualizerFullscreen=false;playerSettingsOpen=false;
         fullscreen=!fullscreen;listening=false;scrubbing=mouseScrub=false;
         controlsFocused=fullscreen;
         if(fullscreen)fullFocus={2,1};
@@ -611,7 +616,7 @@ class App {
                 {"revision", revision},
                 {"sources_revision", sourcesRevision},
                 {"settings", settingsDocument(settings)},
-                {"fields", settingFields()},
+                {"fields", remoteSettingFields()},
                 {"presets", eqPresets},
                 {"accents", accents},
                 {"clock", clock()},
@@ -721,6 +726,7 @@ class App {
     }
     std::string settingText(const nlohmann::json &field) const {
         std::string key = field["key"], kind = field["kind"];
+        if(key=="visualizer_style")return visualizerNames[settings.visualizerStyle];
         if (kind == "info")
             return settings.remoteEnabled ? remoteAddress : "Disabled";
         if (kind == "colour")
@@ -745,6 +751,7 @@ class App {
         auto fields = settingFields();
         auto field = fields[settingsNavigation.fieldIndex()];
         std::string key = field["key"], kind = field["kind"];
+        if(key=="visualizer_style"||key=="visualizer_sensitivity"||key=="visualizer_smoothing"){visualizerChoice(key);return;}
         if (kind == "info")
             return;
         if (kind == "colour") {
@@ -976,6 +983,7 @@ class App {
             optionIndex = (optionIndex + delta + int(optionValues.size())) % optionValues.size();
             return;
         }
+        if(playerSettingsOpen){playerSettingsRow=std::clamp(playerSettingsRow+delta,-1,playerSettingsTab?4:7);return;}
         if (fullscreen || controlsFocused) {
             playerVertical(delta);
             return;
@@ -1046,6 +1054,7 @@ class App {
             f(optionValues[optionIndex]);
             return;
         }
+        if(playerSettingsOpen){playerSettingsChange();return;}
         if (page == 4 && !controlsFocused && !fullscreen) {
             clientAction();
             return;
@@ -1112,6 +1121,7 @@ class App {
             move(dir);
             return;
         }
+        if(playerSettingsOpen){playerSettingsChange(dir);return;}
         if (fullscreen || controlsFocused) {
             playerHorizontal(dir);
             return;
@@ -1151,10 +1161,12 @@ class App {
             move(dir * 5);
     }
     void back() {
+        if(visualizerFullscreen){visualizerFullscreen=false;return;}
         if (optionApply) {
             optionApply = nullptr;
             return;
         }
+        if(playerSettingsOpen){playerSettingsOpen=false;return;}
         if (clientEditing) {
             clientEditing = false;
             selected = scroll = 0;
@@ -1190,6 +1202,7 @@ class App {
         }
     }
     void click(int x, int y) {
+        if(visualizerFullscreen){visualizerFullscreen=false;return;}
         if(listening){setListening(false);return;}
         if (connectionOpen || scanOpen) {
             dialogClick(x, y);
@@ -1236,6 +1249,11 @@ class App {
             }
             return;
         }
+        if(playerSettingsOpen){
+            if(inside(x,y,168,118,944,46)){playerSettingsTab=x<630?0:1;playerSettingsRow=-1;return;}
+            if(inside(x,y,170,198,940,(playerSettingsTab?5:8)*43)){playerSettingsRow=(y-198)/43;playerSettingsChange();}return;
+        }
+        if(canExpandVisualizer()&&visualizerRect().contains(x,y)){visualizerFullscreen=true;return;}
         auto volume=volumeRect();
         if(volume.contains(x,y)){
             controlsFocused=true;playerFocus().row=fullscreen?1:3;playerFocus().column=0;syncPlayerFocus();
@@ -1325,23 +1343,23 @@ class App {
     void drawFullscreen(const Playback &p) {
         if(artworkVisible())ui.image(artTexture,64,140,400);
         int x=playerX(),width=playerWidth();
-        ui.text(x,142,"NOW PLAYING",15,MUTED,width);
+        ui.text(x,142,"NOW PLAYING"+(p.count>0?"  "+std::to_string(p.index+1)+"/"+std::to_string(p.count):std::string{}),15,MUTED,width);
         ui.marquee(x,180,trackTitle(p),34,TEXT,width,"fullscreen-title");
         ui.text(x,238,p.details.artist,25,ACCENT,width);
         ui.text(x,282,trackAlbum(p),22,MUTED,width);
         if(!(listening&&settings.listeningHideMetadata))drawBadges(p,x,322,width,16);
         drawVisualizer(p);
-        if(p.count>0)ui.text(64,layout().bottom(490),std::to_string(p.index+1)+" / "+std::to_string(p.count),16,MUTED);
+
     }
     void drawVisualizer(const Playback &p){
         if(!settings.visualizer)return;
         int x=fullscreen?playerX():900,w=fullscreen?playerWidth():328;
-        int y=fullscreen?365:392,h=fullscreen?42:22;
-        y+=layout().extraHeight();
+        int y=fullscreen?visualizerRect().y:392+layout().extraHeight(),h=fullscreen?visualizerRect().h:22;
         UI::Clip clip(ui,x,y,w,h);
         for(int i=0;i<32;i++){
             int bar=std::max(2,int(std::clamp(p.spectrum[i],0.f,1.f)*h));
-            ui.rect(x+i*w/32,y+h-bar,std::max(3,w/32-4),bar,ACCENT);
+            if(fullscreen)ui.recordOnlyRect(x+i*w/32,y+h-bar,std::max(3,w/32-4),bar,ACCENT);
+            else ui.rect(x+i*w/32,y+h-bar,std::max(3,w/32-4),bar,ACCENT);
         }
     }
     void drawSeek(const Playback &p){
@@ -1355,7 +1373,7 @@ class App {
         ui.rightText(a.x+a.w,a.y+30,duration,fullscreen?18:14,MUTED);
     }
     void drawPlayerButtons(const Playback &p){
-        const char *labels[]={"Previous","Play/Pause","Next","Stop","Shuffle","Repeat","Equalizer","Fullscreen"};
+        const char *labels[]={"Previous","Play/Pause","Next","Stop","Shuffle","Repeat","EQ / Visualizer","Fullscreen"};
         for(int row=fullscreen?2:1;row<=2;row++)for(int col=0;col<PlayerNavigation::count(fullscreen,row);col++){
             PlayerNavigation item{row,col};int id=item.action(fullscreen);
             auto a=playerButtonRect(fullscreen,layout().extraHeight(),row,col);
@@ -1415,10 +1433,11 @@ class App {
         if(optionApply){hint("Dpad","Navigate");hint("Cross","Select");hint("Circle","Back");return;}
         if(colourPicking){hint("Dpad","Colour");hint("Cross","Choose");hint("Circle","Cancel");return;}
         if(fullscreen||controlsFocused){
-            const char *labels[]={"Previous","Play/Pause","Next","Stop","Shuffle","Repeat","Equalizer","Fullscreen"};
+            const char *labels[]={"Previous","Play/Pause","Next","Stop","Shuffle","Repeat","EQ / Visualizer","Fullscreen"};
             auto &focus=playerFocus();int id=focus.action(fullscreen);
             hint("Dpad",focus.seek()?"Seek 10s":focus.volume(fullscreen)?"Volume":"Navigate");
-            if(id>=0)hint("Cross",labels[id]);
+            if(fullscreen&&fullFocus.row==-1)hint("Cross","Expand visualizer");
+            else if(id>=0)hint("Cross",labels[id]);
             hint("Circle",fullscreen?"Close":"Browse");
         }else{hint("Dpad","Navigate");hint("Cross",page==3?(settingsNavigation.entries?"Change":"Select"):editing?"Edit":"Open");hint("Circle",page==3&&settingsNavigation.entries?"Categories":"Back");if(page==0)hint("Triangle","Edit source");}
         if(!fullscreen){hint("Touchpad","Player");hint("L1","");hint("R1","Tabs");hint("R3","Fullscreen");}
@@ -1578,7 +1597,14 @@ class App {
             SDL_Event event;while(SDL_PollEvent(&event))if(event.type==SDL_QUIT)running=false;
             return;
         }
-        if(fullscreen&&!colourPicking&&!optionApply&&(down&HidNpadButton_StickL)){
+        if(visualizerFullscreen){
+            if(down&HidNpadButton_B){visualizerFullscreen=false;return;}
+            if(down&HidNpadButton_Plus)player.pause();
+            if(down&HidNpadButton_L)player.previous();if(down&HidNpadButton_R)player.next();
+            if(down&HidNpadButton_ZL)player.seek(-5);if(down&HidNpadButton_ZR)player.seek(5);
+            SDL_Event event;while(SDL_PollEvent(&event)){if(event.type==SDL_QUIT)running=false;else if(event.type==SDL_MOUSEBUTTONDOWN||event.type==SDL_FINGERDOWN)visualizerFullscreen=false;}return;
+        }
+        if(fullscreen&&!playerSettingsOpen&&!colourPicking&&!optionApply&&(down&HidNpadButton_StickL)){
             setListening(true);listeningBlocked=held|down;return;
         }
         if (down & HidNpadButton_Plus)
@@ -1587,7 +1613,7 @@ class App {
             wake();
             return;
         }
-        if (!colourPicking && !optionApply && (down & HidNpadButton_StickR))
+        if (!playerSettingsOpen && !colourPicking && !optionApply && (down & HidNpadButton_StickR))
             toggleFullscreen();
 
         if (!fullscreen && !colourPicking && !optionApply && (down & HidNpadButton_L)) {
@@ -1776,7 +1802,7 @@ class App {
         ui.recordScreen(settings.remoteEnabled && screenSessions.active(SDL_GetTicks64()) &&
                         SDL_GetTicks64() - lastScreenPublish >= 50);
         updateRemote();
-        sleeping = !listening && settings.screensaverSeconds > 0 &&
+        sleeping = !listening && !visualizerFullscreen && settings.screensaverSeconds > 0 &&
                    SDL_GetTicks64() - lastInteraction >= Uint64(settings.screensaverSeconds) * 1000;
         player.tick();
         LoadResult result;
@@ -1851,7 +1877,7 @@ class App {
     }
     void draw(){draw(player.snapshot());}
     void draw(const Playback &p) {
-        frameDiagnostics.view=fullscreen?"fullscreen":"menu";
+        frameDiagnostics.view=visualizerFullscreen?"visualizer":fullscreen?"fullscreen":"menu";
         if (connectionOpen) {
             drawConnection();
             return;
@@ -1875,10 +1901,16 @@ class App {
             finishFrame();
             return;
         }
+        if(fullscreen&&visualizerFullscreen&&!ui.recordingScreen()){
+            drawLocalVisualizer(p);finishFrame();return;
+        }
         header();
         if (fullscreen) {
             drawFullscreen(p);
             drawControls(p, p.error);
+            if(visualizerFullscreen)ui.paintBackground();
+            drawLocalVisualizer(p);
+            drawPlayerSettings();
             drawOptions();
             finishFrame();
             return;

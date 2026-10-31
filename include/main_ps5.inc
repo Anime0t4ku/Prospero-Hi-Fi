@@ -12,7 +12,10 @@ int main(int argc,char **argv) {
     if(screenshot)settings.remoteEnabled=false;
 #endif
     if(!storageAccessReady())error="Storage access unavailable. Start your local ELF loader (port 9021), then reopen Prospero Hi-Fi.";
-    playbackTrace("boot.prospero-1.2.0",0,true);
+    playbackTrace("boot.prospero-1.3.0-agc",0,true);
+#ifdef __PROSPERO__
+    SDL_SetHint(SDL_HINT_RENDER_DRIVER,"ps5agc");
+#endif
     if(SDL_Init(SDL_INIT_VIDEO|SDL_INIT_AUDIO|SDL_INIT_EVENTS|SDL_INIT_GAMECONTROLLER)<0){std::fprintf(stderr,"SDL: %s\n",SDL_GetError());return 1;}
     SDL_DisplayMode output{};
     if(SDL_GetCurrentDisplayMode(0,&output)!=0||output.w<640||output.h<480){output.w=1920;output.h=1080;}
@@ -24,9 +27,20 @@ int main(int argc,char **argv) {
     windowFlags|=SDL_WINDOW_FULLSCREEN_DESKTOP;
 #endif
     SDL_Window *window=SDL_CreateWindow("Prospero Hi-Fi",SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED,output.w,output.h,windowFlags);
-    // The PS5 SDL VideoOut renderer follows the user's output without requiring a GPU driver payload.
-    SDL_Renderer *renderer=window?SDL_CreateRenderer(window,-1,SDL_RENDERER_SOFTWARE):nullptr;
-    if(!renderer||TTF_Init()!=0){std::fprintf(stderr,"Graphics: %s\n",SDL_GetError());SDL_Quit();return 2;}
+    // Native AGC is part of the title: no software-renderer fallback is silently selected.
+#ifdef __PROSPERO__
+    Uint32 rendererFlags=SDL_RENDERER_ACCELERATED|SDL_RENDERER_PRESENTVSYNC;
+#else
+    Uint32 rendererFlags=SDL_RENDERER_SOFTWARE;
+#endif
+    SDL_Renderer *renderer=window?SDL_CreateRenderer(window,-1,rendererFlags):nullptr;
+    if(!renderer||TTF_Init()!=0){
+        const char *message=SDL_GetError();std::fprintf(stderr,"Graphics: %s\n",message);
+#ifdef __PROSPERO__
+        std::ofstream log("/data/prospero-hifi/graphics-error.txt");if(log)log<<"Prospero v"<<Version<<" (native AGC): "<<message<<'\n';
+#endif
+        SDL_Quit();return 2;
+    }
     std::ifstream file(std::string(assetRoot())+"font.ttf",std::ios::binary);
     std::vector<char> font((std::istreambuf_iterator<char>(file)),std::istreambuf_iterator<char>());
     if(font.empty()){std::fprintf(stderr,"Missing assets/font.ttf\n");SDL_Quit();return 3;}

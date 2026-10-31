@@ -27,3 +27,9 @@ build_run disc_player source/player.cpp build-host/decoder.o build-host/core.o -
 build_run cover_codec build-host/cover_codec.o build-host/core.o "${libs[@]}"
 build_run remote source/remote.cpp source/discovery.cpp source/websocket.cpp source/storage_devices.cpp source/optical_detection.cpp build-host/core.o
 build_run client source/client.cpp source/remote.cpp source/discovery.cpp source/websocket.cpp source/storage_devices.cpp source/optical_detection.cpp build-host/core.o
+
+build_run visualizer build-host/core.o build-host/decoder.o "${libs[@]}" -lm -ldl
+
+# Exercise the actual native GPU backend against a deterministic AGC API mock.
+"$cc" -std=c11 -D_POSIX_C_SOURCE=200809L -O1 -g "${extra[@]}" -Itests tests/agc_renderer_test.c "${libs[@]}" -lm -o build-host/agc_renderer
+./build-host/agc_renderer

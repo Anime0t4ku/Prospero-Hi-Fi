@@ -306,6 +306,9 @@ extern SDL_RenderDriver METAL_RenderDriver;
 extern SDL_RenderDriver PS2_RenderDriver;
 extern SDL_RenderDriver PSP_RenderDriver;
 extern SDL_RenderDriver SW_RenderDriver;
+#ifdef SDL_VIDEO_DRIVER_PS5
+extern SDL_RenderDriver PS5AGC_RenderDriver;
+#endif
 extern SDL_RenderDriver VITA_GXM_RenderDriver;
 
 /* Blend mode functions */

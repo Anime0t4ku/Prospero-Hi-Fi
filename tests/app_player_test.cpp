@@ -97,8 +97,8 @@ int main(){
         press(HidNpadButton_Up);draw();assert(hasText(ui,"Seek 10s"));
         press(HidNpadButton_Down);press(HidNpadButton_Down);draw();assert(hasText(ui,"Next"));
         press(HidNpadButton_Right);press(HidNpadButton_Right);press(HidNpadButton_Right);press(HidNpadButton_A);
-        draw();assert(hasText(ui,"Equalizer preset")&&!hasText(ui,"Sources"));
-        press(HidNpadButton_B);draw();assert(!hasText(ui,"Equalizer preset")&&!hasText(ui,"Sources"));
+        draw();assert(hasText(ui,"Equalizer")&&hasText(ui,"Visualizer")&&!hasText(ui,"Sources"));
+        press(HidNpadButton_B);draw();assert(!hasText(ui,"Bass 60 Hz")&&!hasText(ui,"Sources"));
         Source local{false,{},root};player.play({{local,"test.wav","One"},{local,"test.wav","Two"},{local,"test.wav","Three"}},1);
         press(HidNpadButton_L);assert(player.snapshot().index==0);
         press(HidNpadButton_R);assert(player.snapshot().index==1);
@@ -158,6 +158,37 @@ int main(){
             assert(normal==fresh);
         }
         player.stop();
+    }
+    // New local settings share persistent values, while remote frames keep stock bars.
+    for(bool docked:{false,true}){
+        UI ui(renderer,font.data(),font.size());ui.setDocked(docked);Settings settings;
+        settings.musicRoot=root;settings.remoteEnabled=false;settings.visualizerStyle=4;
+        Player player(settings);App app(ui,renderer,player,settings,"",root+"/visualizer.json");PadState pad{};
+        auto press=[&](u64 b){app.input(pad,b,b,true);app.input(pad,0,0,true);};
+        Playback fixture;fixture.playing=true;fixture.count=19;fixture.index=17;fixture.track.path="test.wav";
+        fixture.details.title="Visualizer regression";fixture.details.format="FLAC";fixture.details.sampleRate=44100;
+        fixture.spectrum.fill(.7f);for(int i=0;i<256;i++){fixture.waveLeft[i]=sin(i*.14f)*.7f;fixture.waveRight[i]=cos(i*.14f)*.7f;}
+        auto draw=[&]{ui.recordScreen(true);app.draw(fixture);};
+        press(HidNpadButton_StickR);draw();
+        if(docked)if(auto dir=std::getenv("PROSPERO_PREVIEW_DIR")){
+            auto *surface=SDL_CreateRGBSurfaceWithFormat(0,1920,1080,32,SDL_PIXELFORMAT_RGBA32);
+            for(int i=0;i<45;i++){draw();SDL_Delay(8);}
+            assert(SDL_RenderReadPixels(renderer,nullptr,surface->format->format,surface->pixels,surface->pitch)==0);
+            IMG_SavePNG(surface,(std::string(dir)+"/full-radial.png").c_str());SDL_FreeSurface(surface);
+        }
+        assert(hasText(ui,"NOW PLAYING  18/19"));assert(textCount(ui,"18 / 19")==0);
+        press(HidNpadButton_Up);press(HidNpadButton_Up);press(HidNpadButton_Up);draw();assert(hasText(ui,"Expand visualizer"));
+        draw();auto normalFrame=ui.screenFrame();press(HidNpadButton_A);draw();auto expandedFrame=ui.screenFrame();
+        assert(normalFrame==expandedFrame); // Only local pixels change; remotes retain the normal stock player.
+        press(HidNpadButton_B);draw();assert(hasText(ui,"NOW PLAYING"));
+        press(HidNpadButton_Down);press(HidNpadButton_Down);press(HidNpadButton_Down);
+        for(int i=0;i<3;i++)press(HidNpadButton_Right);
+        press(HidNpadButton_A);draw();assert(hasText(ui,"Visualizer")&&hasText(ui,"Bass 60 Hz"));
+        press(HidNpadButton_Right);press(HidNpadButton_A);press(HidNpadButton_Down);press(HidNpadButton_A);
+        draw();assert(hasText(ui,"Spectrum mountains")&&hasText(ui,"Radial spectrum"));
+        press(HidNpadButton_Down);press(HidNpadButton_A); // Radial -> Spectrogram.
+        std::string error;Settings loaded;assert(loadSettings(root+"/visualizer.json",loaded,error));assert(loaded.visualizerStyle==5);
+        press(HidNpadButton_B);press(HidNpadButton_B);draw();assert(hasText(ui,"Sources"));
     }
     fs::remove_all(root);SDL_DestroyRenderer(renderer);SDL_DestroyWindow(window);TTF_Quit();SDL_Quit();
     std::cout<<"App integration: Settings category/entry controls and remembered focus; active-playback browser redraw/clip recovery (90 frames); fullscreen shortcuts, Auto Fullscreen and duration alignment passed.\n";

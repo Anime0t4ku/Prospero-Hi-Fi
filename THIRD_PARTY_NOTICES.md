@@ -13,3 +13,17 @@ Prospero Hi-Fi is a GPL-3.0 derivative of Anime0t4ku's NX Hi-Fi v1.1.0.
 - CA certificates: system Mozilla-derived trust bundle; certificate data is bundled for verified HTTPS, with certificate verification enabled.
 
 All original attribution headers remain in the source. No game files, BIOS, proprietary Sony runtime, or console keys are included.
+
+## Native AGC GPU renderer (v1.3.0 GPU test build)
+
+- Rufidj/ps5link-sdk, GPL-3.0: GPU cube setup, textured pixel assembly and
+  agcpack container tool. Source: https://github.com/Rufidj/ps5link-sdk
+  Revision: ea771e535378740b6a058b8e5419eb8a0e0e0ec8.
+- SvenGDK/SharpProspero, GPL-3.0: mesh vertex shader/container and descriptor ABI
+  reference. Source: https://github.com/SvenGDK/SharpProspero
+  Revision: 5dfdb4b0b166e83dc9ae275001afb695f12c7174.
+  License: licenses/SharpProspero-GPL-3.0.txt. Shader source is in ps5/gpu.
+- Mihawk-99/PS5_Vulkan, GPL-3.0-or-later: completion-fence, target-reuse and
+  blend-state reference. Revision: f410e67a0241b3e8edcdbcd2a9b285dfc4a412ed.
+- The added ps5agc SDL renderer is GPL-3.0-or-later and explicitly marked as
+  application-specific; the surrounding SDL sources retain their zlib notices.

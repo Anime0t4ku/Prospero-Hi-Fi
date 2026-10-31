@@ -103,3 +103,48 @@ The complete homebrew folder is generated in `dist/PPSA99287/`.
 Developed by **Anime0t4ku**, based on **NX Hi-Fi** and **MiSTer Hi-Fi**, with PS5SX2-derived keyboard and USB optical-drive work.
 
 Released under [GPLv3](LICENSE). See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for component credits and licenses. Music and artwork are not included.
+
+
+### v1.3.0 — fullscreen visualizers
+
+The track counter now follows NOW PLAYING. The fullscreen sliders icon opens
+Equalizer and Visualizer tabs, with the same persistent visualizer controls in
+Settings > Visualizer. Choose from the stock spectrum and 18 additional styles:
+spectrum mountains, mirrored spectrum, waveform ribbon, radial spectrum,
+spectrogram, particle spectrum, oscilloscope, stereo scope, spectrum waterfall,
+dot matrix, orbit, bass ripples, frequency strings, pixel skyline, twin waves,
+starfield, pulse lattice and flame spectrum.
+
+Sensitivity and smoothing are adjustable. Most styles follow the active theme
+and accent; Spectrogram and Flame Spectrum use intentional frequency/heat palettes.
+Waveform and stereo styles use real decoded stereo audio for files and audio CDs.
+
+In the local fullscreen player, press Up from the seek bar to focus the visualizer,
+then Cross to expand it. Clicking the visualizer also expands it. Circle or a click
+returns to the player. Playback shortcuts remain available while expanded.
+Disable Select to expand in the visualizer settings if desired.
+
+The mini player, web player and remote clients retain the stock spectrum.
+Screen Control also receives the ordinary player with stock bars while the PS5
+shows an advanced or expanded visualizer. The advanced styles and expanded view
+are rendered only on the local PS5.
+
+
+### v1.3.0 GPU test build
+
+On PS5, the complete interface now uses the native AGC GPU through a custom
+SDL renderer. This is a hardware-validation build: 60 FPS is the target, not a
+measured result from the build environment. No separate graphics payload is
+needed by this integration; it imports the console's system graphics APIs.
+
+Visualizer backgrounds are transparent, preserving the theme's existing
+backdrop. Expanded visualizers skip the hidden player UI unless a stock
+screen-control frame is being prepared for a connected remote.
+
+`/data/prospero-hifi/performance.json` reports the renderer name, GPU flag,
+view, measured FPS and frame timings. Expect `renderer: ps5agc` and
+`gpu_accelerated: true`. If graphics initialization fails, the reason is saved
+to `/data/prospero-hifi/graphics-error.txt` when the data directory is writable.
+Restart the app after changing HDMI resolution; live GPU scanout reallocation
+is deliberately disabled. See ps5/gpu/README.md for shader sources, build
+reproduction and implemented renderer capabilities.

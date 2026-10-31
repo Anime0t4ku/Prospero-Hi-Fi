@@ -11,7 +11,7 @@
 #include <vector>
 
 namespace nxh {
-constexpr const char *Version = "1.2.0";
+constexpr const char *Version = "1.3.0";
 // Additive identity: legacy NX clients still use the existing wire format.
 inline nlohmann::json remoteIdentity(){
     return {{"app_id","prospero-hifi"},{"name","Prospero Hi-Fi"},{"platform","ps5"},
@@ -35,6 +35,8 @@ struct Settings {
     std::string theme = "dark", accent = "#3B82F6";
     bool showClock = true, clock24h = true, showArtwork = true, hideMissingArt = false;
     bool preferFolderArt = false, visualizer = true, rememberShuffleRepeat = true;
+    int visualizerStyle = 0, visualizerSensitivity = 100, visualizerSmoothing = 65;
+    bool visualizerExpand = true;
     bool wrapNavigation = true, holdRepeat = true, remoteEnabled = true;
     int screensaverSeconds = 0, remotePort = 8182;
     int volume = 100;

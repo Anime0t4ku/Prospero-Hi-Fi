@@ -28,7 +28,7 @@ $(BUILD)/%.o: %.c
 $(BUILD)/native-tool: $(wildcard ps5/native/*cpp) $(wildcard ps5/native/*hpp)
 	@mkdir -p $(BUILD)
 	$(HOST_CXX) -std=c++20 -O2 ps5/native/native_app_builder.cpp ps5/native/elf_object.cpp ps5/native/self_container.cpp ps5/native/sce_module_writer.cpp -lz -o $@
-$(BUILD)/sdl/libSDL2.a: third_party/SDL-ps5/src/video/ps5/SDL_ps5video.c third_party/SDL-ps5/src/video/ps5/SDL_ps5keyboard.c
+$(BUILD)/sdl/libSDL2.a: $(wildcard third_party/SDL-ps5/src/video/ps5/*.[ch]) $(wildcard third_party/SDL-ps5/src/render/ps5agc/*.[ch]) third_party/SDL-ps5/src/render/SDL_render.c third_party/SDL-ps5/src/render/SDL_sysrender.h
 	cmake -S third_party/SDL-ps5 -B $(BUILD)/sdl -DCMAKE_TOOLCHAIN_FILE=$(PS5_PAYLOAD_SDK)/toolchain/prospero.cmake -DCMAKE_BUILD_TYPE=Release -DSDL_SHARED=OFF -DSDL_STATIC=ON -DSDL_TEST=OFF -DSDL_OPENGL=OFF -DSDL_OPENGLES=OFF -DSDL_VULKAN=OFF
 	cmake --build $(BUILD)/sdl -j4
 $(BUILD)/access-helper.elf: ps5/access_helper.c

@@ -24,6 +24,7 @@
 #ifdef SDL_VIDEO_DRIVER_PS5
 
 #include <errno.h>
+#include "SDL_hints.h"
 
 #include "SDL_ps5video.h"
 #include "SDL_ps5keyboard.h"
@@ -195,6 +196,8 @@ static int PS5_VideoInit(_THIS)
     SDL_DisplayMode mode;
     PS5_VideoAttr vattr;
     void *vaddr = 0;
+    const char *driver=SDL_GetHint(SDL_HINT_RENDER_DRIVER);
+    size_t alignment=driver && !SDL_strcmp(driver,"ps5agc") ? 0x200000 : 0x20000;
 
     SDL_zero(mode);
     mode.format = SDL_PIXELFORMAT_ABGR8888;
@@ -217,14 +220,14 @@ static int PS5_VideoInit(_THIS)
     }
     /* Two 4K tiled buffers can exceed 64 MiB once tile alignment is included. */
     device_data->memsize = 0x8000000;
-    if (sceKernelAllocateMainDirectMemory(device_data->memsize, 0x20000, 3,
+    if (sceKernelAllocateMainDirectMemory(device_data->memsize, alignment, 3,
                                           &device_data->paddr)) {
         return SDL_SetError("sceKernelAllocateMainDirectMemory: %s",
                             strerror(errno));
     }
 
     if (sceKernelMapDirectMemory(&vaddr, device_data->memsize, 0x33, 0,
-                                 device_data->paddr, 0x20000)) {
+                                 device_data->paddr, alignment)) {
         return SDL_SetError("sceKernelMapDirectMemory: %s", strerror(errno));
     }
 
@@ -242,7 +245,8 @@ static int PS5_VideoInit(_THIS)
         return SDL_SetError("sceVideoOutSetFlipRate: %s", strerror(errno));
     }
 
-    sceVideoOutSetBufferAttribute2(&vattr, 0x8000000022000000UL, 0,
+    /* Prospero native AGC: BGRA8 scanout matches the GPU target's SWAP_ALT. */
+    sceVideoOutSetBufferAttribute2(&vattr, driver && !SDL_strcmp(driver,"ps5agc") ? 0x8000000000000000UL : 0x8000000022000000UL, 0,
                                    mode.w, mode.h, 0, 0, 0);
 
     if (sceVideoOutRegisterBuffers2(device_data->handle, 0, 0,
@@ -317,6 +321,8 @@ int ProsperoSDLFollowOutput(void)
     SDL_DisplayMode mode;
     SDL_VideoDisplay *display;
     SDL_Window *window;
+    /* AGC resources are sized at launch. Avoid reallocating scanout under an in-flight GPU frame. */
+    if(SDL_GetHint(SDL_HINT_RENDER_DRIVER) && !SDL_strcmp(SDL_GetHint(SDL_HINT_RENDER_DRIVER),"ps5agc"))return 0;
     if(!video || !video->name || SDL_strcmp(video->name,"ps5")) return 0;
     data=(PS5_DeviceData*)video->driverdata;
     if(!data || data->handle<0 || !data->surface) return 0;
