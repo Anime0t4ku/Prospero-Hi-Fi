@@ -10,9 +10,16 @@ const dom=new JSDOM(html,{url:'http://ps5:8182',runScripts:'dangerously',pretend
   return {ok:true,json:async()=>structuredClone(state)};
  };w.addEventListener('error',e=>errors.push(e.message));}});
 const w=dom.window,d=w.document,$=id=>d.getElementById(id),settle=()=>new Promise(r=>setTimeout(r,30));
-(async()=>{await settle();assert.equal($('connection').textContent,'Prospero Hi-Fi · v1.2.0 · Connected');assert.equal($('time').textContent,'0:25');assert.equal($('duration').textContent,'2:00');
+(async()=>{await settle();assert.equal($('connection').textContent,'Prospero Hi-Fi · v'+state.version+' · Connected');assert.equal($('time').textContent,'0:25');assert.equal($('duration').textContent,'2:00');
+ assert.deepEqual([...$('nav').children].map(b=>b.textContent),['Browse','Player','Settings']);
+ $('nav').children[2].click();[...d.querySelectorAll('.settingsCategories button')].find(b=>b.textContent==='Visualizer').click();
+ const canvas=$('spectrum'),styles=d.querySelector('[data-key="visualizer_style"]');assert.equal(styles.options.length,11);assert.equal(styles.options[0].textContent,'Stock spectrum');assert(![...styles.options].some(o=>o.textContent.includes('Radial')));
+ styles.value='18';styles.dispatchEvent(new w.Event('change'));await settle();assert(calls.some(c=>c.patch?.visualizer_style===18));assert.equal($('spectrum'),canvas);
+ [...d.querySelectorAll('.settingsCategories button')].find(b=>b.textContent==='Equalizer').click();assert.equal(d.querySelectorAll('input[type=range][data-key^="eq_"]').length,5);
+ const gain=d.querySelector('[data-key="eq_0"]');gain.value='3.5';gain.dispatchEvent(new w.Event('change'));await settle();assert(calls.some(c=>c.patch?.eq_0===3.5));
+ $('nav').children[0].click();
  const children=[...$('player').children];for(const [a,b] of [['spectrum','progress'],['progress','volume'],['volume','transport']])assert(children.indexOf(a==='volume'?$(a).closest('.volume'):$(a))<children.indexOf(b==='volume'?$(b).closest('.volume'):$(b)));
- $('nav').children[3].click();[...d.querySelectorAll('.settingsCategories button')].find(b=>b.textContent==='Listening Mode').click();assert.equal(d.querySelectorAll('.settingsEntries input[type=checkbox]').length,4);
+ $('nav').children[2].click();[...d.querySelectorAll('.settingsCategories button')].find(b=>b.textContent==='Listening Mode').click();assert.equal(d.querySelectorAll('.settingsEntries input[type=checkbox]').length,4);
  const setting=d.querySelector('.settingsEntries input');setting.checked=false;setting.dispatchEvent(new w.Event('change'));await settle();assert.equal(state.settings.listening_hide_title,false);
  $('nav').children[1].click();assert(d.body.classList.contains('mobilePlayer'));$('listening-toggle').click();await settle();assert(state.listening_mode);$('ctl-playpause').click();await settle();assert(state.listening_mode);$('listening-toggle').click();await settle();assert(!state.listening_mode);
  $('nav').children[0].click();assert(!d.body.classList.contains('mobilePlayer'));

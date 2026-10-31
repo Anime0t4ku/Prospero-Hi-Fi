@@ -162,7 +162,7 @@ int main(){
     // New local settings share persistent values, while remote frames keep stock bars.
     for(bool docked:{false,true}){
         UI ui(renderer,font.data(),font.size());ui.setDocked(docked);Settings settings;
-        settings.musicRoot=root;settings.remoteEnabled=false;settings.visualizerStyle=4;
+        settings.musicRoot=root;settings.remoteEnabled=false;settings.visualizerStyle=3;
         Player player(settings);App app(ui,renderer,player,settings,"",root+"/visualizer.json");PadState pad{};
         auto press=[&](u64 b){app.input(pad,b,b,true);app.input(pad,0,0,true);};
         Playback fixture;fixture.playing=true;fixture.count=19;fixture.index=17;fixture.track.path="test.wav";
@@ -174,7 +174,7 @@ int main(){
             auto *surface=SDL_CreateRGBSurfaceWithFormat(0,1920,1080,32,SDL_PIXELFORMAT_RGBA32);
             for(int i=0;i<45;i++){draw();SDL_Delay(8);}
             assert(SDL_RenderReadPixels(renderer,nullptr,surface->format->format,surface->pixels,surface->pitch)==0);
-            IMG_SavePNG(surface,(std::string(dir)+"/full-radial.png").c_str());SDL_FreeSurface(surface);
+            IMG_SavePNG(surface,(std::string(dir)+"/full-waveform.png").c_str());SDL_FreeSurface(surface);
         }
         assert(hasText(ui,"NOW PLAYING  18/19"));assert(textCount(ui,"18 / 19")==0);
         press(HidNpadButton_Up);press(HidNpadButton_Up);press(HidNpadButton_Up);draw();assert(hasText(ui,"Expand visualizer"));
@@ -184,11 +184,20 @@ int main(){
         press(HidNpadButton_Down);press(HidNpadButton_Down);press(HidNpadButton_Down);
         for(int i=0;i<3;i++)press(HidNpadButton_Right);
         press(HidNpadButton_A);draw();assert(hasText(ui,"Visualizer")&&hasText(ui,"Bass 60 Hz"));
-        press(HidNpadButton_Right);press(HidNpadButton_A);press(HidNpadButton_Down);press(HidNpadButton_A);
-        draw();assert(hasText(ui,"Spectrum mountains")&&hasText(ui,"Radial spectrum"));
-        press(HidNpadButton_Down);press(HidNpadButton_A); // Radial -> Spectrogram.
+        Source local{false,{},root};player.play({{local,"test.wav","One"},{local,"test.wav","Two"},{local,"test.wav","Three"}},1);
+        press(HidNpadButton_R);draw();assert(hasText(ui,"Local fullscreen style")||hasText(ui,"Fullscreen style"));assert(player.snapshot().index==1);
+        press(HidNpadButton_L);draw();assert(hasText(ui,"Bass 60 Hz")&&player.snapshot().index==1);
+        press(HidNpadButton_R);press(HidNpadButton_A);press(HidNpadButton_Down);press(HidNpadButton_A);
+        draw();assert(hasText(ui,"Spectrum mountains")&&hasText(ui,"Spectrogram")&&!hasText(ui,"Radial spectrum"));
+        press(HidNpadButton_Down);press(HidNpadButton_A); // Waveform ribbon -> Spectrogram.
         std::string error;Settings loaded;assert(loadSettings(root+"/visualizer.json",loaded,error));assert(loaded.visualizerStyle==5);
         press(HidNpadButton_B);press(HidNpadButton_B);draw();assert(hasText(ui,"Sources"));
+        auto menuFrame=ui.screenFrame();for(auto &op:menuFrame["ops"])if(op[0]==1&&op[3]=="Equalizer")assert(op[2].get<int>()>140);
+        press(HidNpadButton_L);for(int i=0;i<3;i++)press(HidNpadButton_Down);press(HidNpadButton_A);draw();assert(hasText(ui,"Enable equalizer")&&hasText(ui,"Bass 60 Hz"));
+        press(HidNpadButton_A);press(HidNpadButton_Down);press(HidNpadButton_A);press(HidNpadButton_Down);press(HidNpadButton_A);
+        press(HidNpadButton_Down);press(HidNpadButton_Right);
+        assert(loadSettings(root+"/visualizer.json",loaded,error)&&loaded.eqEnabled&&loaded.eq[0]==4.5f);
+        player.stop();
     }
     fs::remove_all(root);SDL_DestroyRenderer(renderer);SDL_DestroyWindow(window);TTF_Quit();SDL_Quit();
     std::cout<<"App integration: Settings category/entry controls and remembered focus; active-playback browser redraw/clip recovery (90 frames); fullscreen shortcuts, Auto Fullscreen and duration alignment passed.\n";

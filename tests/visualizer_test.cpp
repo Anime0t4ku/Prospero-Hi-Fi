@@ -13,7 +13,7 @@ int main(){
  for(int i=0;i<32;i++)p.spectrum[i]=.2f+.7f*std::abs(std::sin(i*.31f));
  for(int i=0;i<256;i++){p.waveLeft[i]=sin(i*.13f)*.8f;p.waveRight[i]=sin(i*.13f+.9f)*.7f;}
  std::vector<Uint32> pixels(1280*720);
- for(auto theme:{"dark","light","oled"})for(int style=0;style<19;style++){
+ for(auto theme:{"dark","light","oled"})for(int style:visualizerIds){
     Settings s;s.theme=theme;s.visualizerStyle=style;setAppearance(theme,s.accent);Visualizer visualizer;
     ui.begin();ui.recordScreen(true);auto frame=ui.screenFrame();
     std::vector<Uint32> before(1280*720);assert(SDL_RenderReadPixels(renderer,nullptr,SDL_PIXELFORMAT_ARGB8888,before.data(),1280*4)==0);
@@ -40,5 +40,5 @@ int main(){
  }
  }
  SDL_DestroyRenderer(renderer);SDL_DestroyWindow(window);TTF_Quit();SDL_Quit();
- std::cout<<"All 19 styles render in dark/light/OLED themes, respect bounds, handle pause/stop and expanded sizes, and do not change remote frames.\n";
+ std::cout<<"All 11 full-width styles render in dark/light/OLED themes, respect bounds, handle pause/stop and expanded sizes, and do not change remote frames.\n";
 }

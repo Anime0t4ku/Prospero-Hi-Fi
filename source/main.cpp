@@ -726,7 +726,10 @@ class App {
     }
     std::string settingText(const nlohmann::json &field) const {
         std::string key = field["key"], kind = field["kind"];
-        if(key=="visualizer_style")return visualizerNames[settings.visualizerStyle];
+        if(key=="visualizer_style")return visualizerName(settings.visualizerStyle);
+        if(kind=="action")return "";
+        if(key=="eq_preset")return settingsDocument(settings)[key].get<int>()<0?"Custom":presets[settingsDocument(settings)[key].get<int>()].name;
+        if(kind=="gain"){char text[24];std::snprintf(text,sizeof(text),"%+.1f dB",settingsDocument(settings)[key].get<float>());return text;}
         if (kind == "info")
             return settings.remoteEnabled ? remoteAddress : "Disabled";
         if (kind == "colour")
@@ -745,12 +748,14 @@ class App {
             return settings.theme == "oled" ? "OLED" : settings.theme == "light" ? "Light" : "Dark";
         return value.is_string() ? value.get<std::string>() : value.dump();
     }
-    void settingAction(int = 1) {
+    void settingAction(int direction = 1) {
         if (!settingsNavigation.entries)
             return;
         auto fields = settingFields();
         auto field = fields[settingsNavigation.fieldIndex()];
         std::string key = field["key"], kind = field["kind"];
+        if(kind=="gain"){float gain=settingsDocument(settings)[key].get<float>();applySettings({{key,std::clamp(gain+direction*.5f,-6.f,6.f)}});return;}
+        if(kind=="action"){applySettings({{key,true}});return;}
         if(key=="visualizer_style"||key=="visualizer_sensitivity"||key=="visualizer_smoothing"){visualizerChoice(key);return;}
         if (kind == "info")
             return;
@@ -767,6 +772,7 @@ class App {
             std::vector<std::string> labels;
             for (auto &v : field["choices"]) {
                 options.push_back(v);
+                if(field.contains("choice_labels")){labels.push_back(field["choice_labels"][labels.size()].get<std::string>());continue;}
                 labels.push_back(v.is_string()
                                      ? (v == "oled"    ? "OLED"
                                         : v == "light" ? "Light"
@@ -818,7 +824,7 @@ class App {
     bool gesture = false;
     ButtonRepeat verticalRepeat;
     void changePage(int p) {
-        page = std::clamp(p, 0, 3);
+        page = std::clamp(p, 0, 3);if(page==2)page=3;
         clientEditing = false;
         controlsFocused = false;
         editing = false;
@@ -974,8 +980,7 @@ class App {
             return std::max(0, int(entries.size()) - 1);
         if (page == 0)
             return int(storageDevices_.size()+settings.shares.size());
-        if (page == 2)
-            return 7;
+
         return int(settingFields().size()) - 1;
     }
     void move(int delta) {
@@ -1085,31 +1090,6 @@ class App {
             }
             return;
         }
-        if (page == 2) {
-            if (selected == 0) {
-                settings.eqEnabled = !settings.eqEnabled;
-                persist();
-            } else if (selected == 1) {
-                std::vector<nlohmann::json> values;
-                std::vector<std::string> labels;
-                int current = -1;
-                for (int i = 0; i < int(presets.size()); ++i) {
-                    values.push_back(i);
-                    labels.push_back(presets[i].name);
-                    if (settings.eq == presets[i].gains)
-                        current = i;
-                }
-                choose("Equalizer preset", values, labels, current, [this](auto v) {
-                    settings.eq = presets[v.template get<int>()].gains;
-                    settings.eqEnabled = true;
-                    persist();
-                });
-            } else if (selected == 7) {
-                settings.eq = {};
-                persist();
-            }
-            return;
-        }
         if (page == 3 && !settingsNavigation.entries)
             settingsNavigation.entries = true;
         else
@@ -1142,24 +1122,9 @@ class App {
             control = (control + dir + 10) % 10;
             return;
         }
-        if (page == 2 && !editing && selected >= 2 && selected <= 6) {
-            settings.eq[selected - 2] =
-                std::clamp(settings.eq[selected - 2] + dir * .5f, -6.f, 6.f);
-            settings.eqEnabled = true;
-            persist();
-
-        } else if (page == 2 && selected == 1) {
-            int i = dir > 0 ? -1 : 0;
-            for (int j = 0; j < int(presets.size()); j++)
-                if (settings.eq == presets[j].gains)
-                    i = j;
-            i = (i + dir + int(presets.size())) % presets.size();
-            settings.eq = presets[i].gains;
-            settings.eqEnabled = true;
-            persist();
-        } else
-            move(dir * 5);
+        move(dir * 5);
     }
+
     void back() {
         if(visualizerFullscreen){visualizerFullscreen=false;return;}
         if (optionApply) {
@@ -1270,8 +1235,8 @@ class App {
                 }
         if(!fullscreen&&artworkVisible()&&inside(x,y,layout().compactArtX(),182,layout().compactArtDesignSize(),layout().artSize(false))){toggleFullscreen();return;}
         if(fullscreen)return;
-        if(inside(x,y,28,90,616,54)){
-            int tab=(x-28)/154;if(tab<4)changePage(tab);seekerFocused=false;return;
+        if(inside(x,y,28,90,462,54)){
+            int tab=(x-28)/154;const int pages[]={0,1,3};if(tab<3)changePage(pages[tab]);seekerFocused=false;return;
         }
         if (page == 3) {
             const int row = (y - 182) / 48;
@@ -1431,6 +1396,7 @@ class App {
         auto hint=[&](const char *button,const std::string &action){x=ui.padHint(x,y,button,action);};
         if(listening){hint("Options","Play/Pause");hint("L1","");hint("R1","Track");hint("L2","");hint("R2","Seek 5s");hint("L3","Exit");return;}
         if(optionApply){hint("Dpad","Navigate");hint("Cross","Select");hint("Circle","Back");return;}
+        if(playerSettingsOpen){hint("L1","");hint("R1","Tabs");hint("Dpad","Adjust");hint("Cross","Choose");hint("Circle","Close");return;}
         if(colourPicking){hint("Dpad","Colour");hint("Cross","Choose");hint("Circle","Cancel");return;}
         if(fullscreen||controlsFocused){
             const char *labels[]={"Previous","Play/Pause","Next","Stop","Shuffle","Repeat","EQ / Visualizer","Fullscreen"};
@@ -1607,6 +1573,9 @@ class App {
         if(fullscreen&&!playerSettingsOpen&&!colourPicking&&!optionApply&&(down&HidNpadButton_StickL)){
             setListening(true);listeningBlocked=held|down;return;
         }
+        if(playerSettingsOpen&&(down&(HidNpadButton_L|HidNpadButton_R))){
+            optionApply=nullptr;playerSettingsTab=1-playerSettingsTab;playerSettingsRow=-1;return;
+        }
         if (down & HidNpadButton_Plus)
             player.pause();
         if (SDL_GetTicks64() < cooldown) {
@@ -1618,11 +1587,11 @@ class App {
 
         if (!fullscreen && !colourPicking && !optionApply && (down & HidNpadButton_L)) {
             fullscreen = false;
-            changePage((page + 3) % 4);
+            changePage(page==0?3:page==3?1:0);
         }
         if (!fullscreen && !colourPicking && !optionApply && (down & HidNpadButton_R)) {
             fullscreen = false;
-            changePage((page + 1) % 4);
+            changePage(page==0?1:page==1?3:0);
         }
         bool up = held & (HidNpadButton_Up | HidNpadButton_StickLUp),
              dn = held & (HidNpadButton_Down | HidNpadButton_StickLDown);
@@ -1915,9 +1884,10 @@ class App {
             finishFrame();
             return;
         }
-        const char *tabs[] = {"Sources", "Library", "Equalizer", "Settings"};
-        for (int i = 0; i < 4; i++)
-            ui.button(28 + i * 154, 90, 142, 48, tabs[i], page == i);
+        const char *tabs[] = {"Sources", "Library", "Settings"};
+        const int tabPages[]={0,1,3};
+        for (int i = 0; i < 3; i++)
+            ui.button(28 + i * 154, 90, 142, 48, tabs[i], page == tabPages[i]);
 
         if (page == 3) {
             ui.rect(28, 155, 220, layout().panelHeight(), PANEL);
@@ -1992,21 +1962,6 @@ class App {
                 values.push_back(s.server + " / " + s.share);
             }
             names.push_back("+ Add SMB share");
-            values.push_back("");
-        } else if (page == 2) {
-            heading = "FIVE-BAND EQUALIZER";
-            std::string preset = "Custom";
-            for (auto &v : presets)
-                if (v.gains == settings.eq)
-                    preset = v.name;
-            names = {"Equalizer", "Preset",         "Bass 60 Hz",    "Low-mid 250 Hz",
-                     "Mid 1 kHz", "High-mid 4 kHz", "Treble 12 kHz", "Reset flat"};
-            values = {settings.eqEnabled ? "On" : "Off", preset};
-            for (auto gain : settings.eq) {
-                char b[20];
-                snprintf(b, sizeof b, "%+.1f dB", gain);
-                values.push_back(b);
-            }
             values.push_back("");
         } else {
             heading = settingsNavigation.current().name;

@@ -1,6 +1,8 @@
 #pragma once
 #include "storage.hpp"
 #include "metadata.hpp"
+#include "audio_analysis.hpp"
+#include <deque>
 #include <SDL.h>
 #include <atomic>
 #include <condition_variable>
@@ -14,6 +16,7 @@ struct Playback {
     double position = 0, duration = 0;
     bool busy = false, playing = false, paused = false, ended = false;
     std::string error;
+    uint64_t analysisFrame=0,analysisEpoch=0;
     std::array<float, 32> spectrum{};
     // Local visualizers only: real post-EQ stereo PCM, never sent to remote clients.
     std::array<float,256> waveLeft{}, waveRight{};
@@ -31,7 +34,16 @@ class Player {
     int index_ = 0;
     Settings settings_;
     Playback state_;
-    std::vector<std::array<float, 256>> cosines_, sines_;
+    AudioVisualQueue visualQueue_;
+    uint64_t visualEpoch_=0;
+    void resetVisualsLocked(uint64_t origin=0){
+        visualQueue_.reset(origin);
+        state_.analysisEpoch=++visualEpoch_;state_.analysisFrame=origin;
+        state_.spectrum={};state_.waveLeft={};state_.waveRight={};
+    }
+    void publishVisualsLocked(std::vector<AudioVisualFrame> frames,uint64_t submitted){
+        visualQueue_.publish(std::move(frames),submitted);
+    }
     void work();
     void decode(Track, uint64_t);
     void decodeDisc(Track, uint64_t);

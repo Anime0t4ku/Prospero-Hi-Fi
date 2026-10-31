@@ -1,5 +1,6 @@
 #include "platform_paths.hpp"
 #include "core.hpp"
+#include "visualizer_styles.hpp"
 #include <cctype>
 #include <cstring>
 #include <fstream>
@@ -135,7 +136,9 @@ nlohmann::json settingsDocument(const Settings &s, bool secrets) {
     if (secrets)
         for (size_t i = 0; i < s.shares.size(); i++)
             shares[i]["password"] = s.shares[i].password;
-    return {{"music_root", s.musicRoot},
+    int eqPreset=-1;for(int i=0;i<int(presets.size());i++)if(s.eq==presets[i].gains)eqPreset=i;
+    return {{"eq_preset",eqPreset},{"eq_0",s.eq[0]},{"eq_1",s.eq[1]},{"eq_2",s.eq[2]},{"eq_3",s.eq[3]},{"eq_4",s.eq[4]},{"eq_reset",false},
+            {"music_root", s.musicRoot},
             {"storage_folders",s.storageFolders},
             {"volume", s.volume},
             {"auto_fullscreen",s.autoFullscreen},
@@ -195,10 +198,17 @@ nlohmann::json settingFields() {
     add("hide_missing_art", "Hide missing artwork placeholder", "Artwork", "bool");
     add("prefer_folder_art", "Prefer folder artwork", "Artwork", "bool");
     add("visualizer", "Show visualizer", "Visualizer", "bool");
-    add("visualizer_style", "Fullscreen style", "Visualizer", "choice", {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18});
+    J styleIds=J::array(),styleLabels=J::array();for(int id:visualizerIds){styleIds.push_back(id);styleLabels.push_back(visualizerName(id));}
+    add("visualizer_style", "Local fullscreen style", "Visualizer", "choice", styleIds);rows.back()["choice_labels"]=styleLabels;
     add("visualizer_sensitivity", "Sensitivity (%)", "Visualizer", "choice", {50,75,100,125,150,200});
     add("visualizer_smoothing", "Smoothing (%)", "Visualizer", "choice", {0,35,65,85});
     add("visualizer_expand", "Select to expand (local fullscreen)", "Visualizer", "bool");
+    add("eq_enabled","Enable equalizer","Equalizer","bool");
+    J eqIds={-1},eqLabels={"Custom"};for(int i=0;i<int(presets.size());i++){eqIds.push_back(i);eqLabels.push_back(presets[i].name);}
+    add("eq_preset","Preset","Equalizer","choice",eqIds);rows.back()["choice_labels"]=eqLabels;
+    const char *gainNames[]={"Bass 60 Hz","Low-mid 250 Hz","Mid 1 kHz","High-mid 4 kHz","Treble 12 kHz"};
+    for(int i=0;i<5;i++){auto key="eq_"+std::to_string(i);add(key.c_str(),gainNames[i],"Equalizer","gain");}
+    add("eq_reset","Reset flat","Equalizer","action");
     add("listening_hide_title", "Hide app title and version", "Listening Mode", "bool");
     add("listening_hide_clock", "Hide clock", "Listening Mode", "bool");
     add("listening_hide_metadata", "Hide technical metadata", "Listening Mode", "bool");
@@ -277,11 +287,25 @@ bool patchSettings(Settings &s, const nlohmann::json &patch, std::string &error)
             if(!v.is_number_integer()){error="Expected an integer: "+key;return false;}
             auto n=v.get<int64_t>();int lo=key=="visualizer_sensitivity"?50:0;
             int hi=key=="visualizer_style"?18:key=="visualizer_sensitivity"?200:95;
-            if(n<lo||n>hi){error="Visualizer value out of range.";return false;}
+            if(n<lo||n>hi||(key=="visualizer_style"&&!validVisualizerStyle(int(n)))){error="Visualizer value out of range.";return false;}
             if(key=="visualizer_style")next.visualizerStyle=int(n);
             else if(key=="visualizer_sensitivity")next.visualizerSensitivity=int(n);
             else next.visualizerSmoothing=int(n);
             continue;
+        }
+        if(key=="eq_reset"){
+            if(!v.is_boolean()){error="Expected a boolean: "+key;return false;}
+            if(v.get<bool>())next.eq={};continue;
+        }
+        if(key=="eq_preset"){
+            if(!v.is_number_integer()){error="Invalid EQ preset.";return false;}
+            auto index=v.get<int64_t>();if(index< -1||index>=int(presets.size())){error="Invalid EQ preset.";return false;}
+            if(index>=0){next.eq=presets[size_t(index)].gains;next.eqEnabled=true;}continue;
+        }
+        if(key.size()==4&&key.rfind("eq_",0)==0&&key[3]>='0'&&key[3]<='4'){
+            if(!v.is_number()){error="Expected EQ gain.";return false;}
+            double gain=v.get<double>();if(!std::isfinite(gain)||gain< -6||gain>6){error="EQ gain must be between -6 and 6 dB.";return false;}
+            next.eq[key[3]-'0']=float(gain);next.eqEnabled=true;continue;
         }
         if(key=="storage_folders"){
             if(!v.is_object()||v.size()>10){error="Invalid storage folders.";return false;}
@@ -484,7 +508,7 @@ bool loadSettings(const std::string &path, Settings &s, std::string &error) {
     auto fields = settingFields();
     for (auto &field : fields) {
         std::string key = field["key"];
-        if (key == "theme" || key == "accent_colour" || key == "remote_address")
+        if (key == "theme" || key == "accent_colour" || key == "remote_address" || key.rfind("eq_",0)==0)
             continue;
         if (j.contains(key)) {
             auto copy = s;

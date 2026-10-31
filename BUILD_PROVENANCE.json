@@ -12,12 +12,32 @@
   "player_reference": "MiSTer_Hi-Fi(20261030-155151).zip",
   "player_reference_sha256": "7333698865718a82aa6bef65689130d5d7aab221de22d0e631c931d9e85ba1fc",
   "release_baseline": "Prospero-Hi-Fi(1).zip / Prospero Hi-Fi v1.2.0",
-  "build_variant": "native-agc-gpu-test",
+  "build_variant": "native-agc-audio-sync-playback-stack-fix",
   "renderer": "ps5agc",
   "target_fps": 60,
   "gpu_backend_source": "ps5link-sdk ea771e535378740b6a058b8e5419eb8a0e0e0ec8; SharpProspero 5dfdb4b0b166e83dc9ae275001afb695f12c7174",
   "gpu_shader_sha256": {
     "mesh_vs.sb": "2eec16311d00559c85bfb0a540e0c3df70fd17348a842ece30fbe68ca77fe114",
     "textured_ps.sb": "16a324f010af2315e9d742c3dde489a8a06015ca26ff1da9110cd396644fb559"
+  },
+  "previous_gpu_build_user_confirmed": true,
+  "audio_analysis": {
+    "window_samples": 4096,
+    "hop_samples": 512,
+    "sample_rate": 44100,
+    "frequency_hz": [
+      20,
+      20000
+    ],
+    "stereo_power": true,
+    "audible_queue_alignment": true
+  },
+  "visualizer_styles": 11,
+  "playback_start_fix": {
+    "cause": "large stack-local audio-analysis buffers",
+    "storage": "single heap-owned DSP buffer block",
+    "small_stack_regression_bytes": 65536,
+    "native_file_decoder_stack_frame_bytes": 1976,
+    "native_disc_decoder_stack_frame_bytes": 4888
   }
 }

@@ -18,7 +18,7 @@ static ma_result seekDecoder(ma_decoder *d, ma_int64 offset, ma_seek_origin orig
                ? MA_SUCCESS
                : MA_BAD_SEEK;
 }
-Player::Player(const Settings &s) : settings_(s), cosines_(32), sines_(32) {
+Player::Player(const Settings &s) : settings_(s) {
     SDL_AudioSpec wanted{};
     wanted.freq = 44100;
     wanted.format = AUDIO_F32SYS;
@@ -29,13 +29,6 @@ Player::Player(const Settings &s) : settings_(s), cosines_(32), sines_(32) {
         state_.error = SDL_GetError();
         return;
     }
-    for (int b = 0; b < 32; b++)
-        for (int i = 0; i < 256; i++) {
-            double phase = 2 * 3.141592653589793 * (b + 1) * i / 256.;
-            double window = .5 - .5 * std::cos(2 * 3.141592653589793 * i / 255.);
-            cosines_[b][i] = std::cos(phase) * window;
-            sines_[b][i] = std::sin(phase) * window;
-        }
     worker_ = std::thread(&Player::work, this);
 }
 Player::~Player() {
@@ -53,7 +46,12 @@ void Player::settings(const Settings &s) {
 }
 Playback Player::snapshot() {
     std::lock_guard<std::mutex> lock(mutex_);
-    return state_;
+    auto result=state_;
+    if(!result.playing||result.busy||result.ended){result.spectrum={};result.waveLeft={};result.waveRight={};return result;}
+    const uint64_t queued=device_?SDL_GetQueuedAudioSize(device_)/(2*sizeof(float)):0;
+    auto visual=visualQueue_.sample(queued);
+    result.spectrum=visual.spectrum;result.waveLeft=visual.left;result.waveRight=visual.right;result.analysisFrame=visual.frame;
+    return result;
 }
 std::vector<Track> Player::queue() {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -64,6 +62,7 @@ void Player::requestLocked() {
     pending_ = true;
     seek_ = -1;
     state_ = {};
+    resetVisualsLocked();
     state_.track = queue_[index_];
     state_.index = index_;
     state_.count = queue_.size();
@@ -92,7 +91,7 @@ void Player::stop() {
     seek_ = -1;
     state_.playing = state_.busy = state_.paused = state_.ended = false;
     state_.position = 0;
-    state_.spectrum = {};state_.waveLeft={};state_.waveRight={};
+    resetVisualsLocked();
     state_.error.clear();
     if (device_) {
         SDL_PauseAudioDevice(device_, 1);
@@ -243,6 +242,7 @@ void Player::decode(Track track, uint64_t gen) {
         state_.details = std::move(details);
     }
     Equalizer eq;
+    AudioAnalysis analysis;
     std::vector<float> samples(2048 * 2);
     uint64_t decoded = 0;
     bool eof = false, started = false;
@@ -277,6 +277,7 @@ void Player::decode(Track track, uint64_t gen) {
                 state_.busy = true;
                 state_.position = seek;
                 eq.reset();
+                analysis.reset(decoded);resetVisualsLocked(decoded);
             } else {
                 std::lock_guard<std::mutex> lock(mutex_);
                 if (generation_ == gen) {
@@ -340,21 +341,10 @@ void Player::decode(Track track, uint64_t gen) {
         }
         eq.configure(settings.eqEnabled, settings.eq);
         eq.process(samples.data(), frames);
+        auto visualFrames=analysis.push(samples.data(),frames); // Post-EQ, before user volume.
         float volume = settings.volume / 100.f;
         for (size_t i = 0; i < frames * 2; i++)
             samples[i] *= volume;
-        std::array<float, 32> spectrum{};
-        if (frames >= 256 && settings.visualizer)
-            for (int b = 0; b < 32; b++) {
-                double re = 0, im = 0;
-                for (int i = 0; i < 256; i++) {
-                    float mono = (samples[i * 2] + samples[i * 2 + 1]) * .5f;
-                    re += mono * cosines_[b][i];
-                    im += mono * sines_[b][i];
-                }
-                float db = 20 * std::log10(std::max(1e-6, std::sqrt(re * re + im * im) / 64.));
-                spectrum[b] = std::clamp((db + 60) / 60., 0., 1.);
-            }
         {
             std::lock_guard<std::mutex> lock(mutex_);
             if (generation_ != gen)
@@ -374,11 +364,7 @@ void Player::decode(Track track, uint64_t gen) {
             state_.position = std::max(
                 0.,
                 (double(decoded) - SDL_GetQueuedAudioSize(device_) / (2 * sizeof(float))) / 44100.);
-            state_.spectrum = spectrum;
-            for(size_t i=0;i<256;i++){
-                state_.waveLeft[i]=settings.visualizer&&i<frames?samples[i*2]:0;
-                state_.waveRight[i]=settings.visualizer&&i<frames?samples[i*2+1]:0;
-            }
+            publishVisualsLocked(std::move(visualFrames),decoded);
             if (!started) {
                 started = true;
                 state_.busy = false;

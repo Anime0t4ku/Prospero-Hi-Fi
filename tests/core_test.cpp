@@ -533,6 +533,15 @@ int main() {
     assert(sourceRate == 48000 && outputRate == 44100);
     ma_decoder_uninit(&decoder);
 
+    {
+        Settings eqSettings;std::string error;
+        assert(patchSettings(eqSettings,{{"eq_0",3.5}},error)&&eqSettings.eqEnabled&&eqSettings.eq[0]==3.5f);
+        assert(!patchSettings(eqSettings,{{"eq_0",7}},error)&&eqSettings.eq[0]==3.5f);
+        assert(patchSettings(eqSettings,{{"eq_preset",1}},error)&&eqSettings.eq==presets[1].gains);
+        assert(patchSettings(eqSettings,{{"eq_reset",true}},error)&&eqSettings.eq==presets[0].gains);
+        for(int id:{4,6,8,11,12,13,16,17})assert(!patchSettings(eqSettings,{{"visualizer_style",id}},error));
+        auto fields=settingFields();for(auto &field:fields)if(field["key"]=="visualizer_style")assert(field["choices"].size()==11&&field["choice_labels"][0]=="Stock spectrum");
+    }
     std::cout << "Embedded artwork, malformed metadata, guest default, path validation, buffered "
                  "seeking, credential/config persistence, backup "
                  "recovery, EQ presets and PCM decode/seek passed.\n";
