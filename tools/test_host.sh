@@ -13,6 +13,7 @@ build_run(){ local name=$1;shift; "$cxx" "${flags[@]}" "tests/${name}_test.cpp" 
 build_run core build-host/core.o build-host/decoder.o -lm -ldl
 build_run audio_analysis
 build_run natural_sort build-host/core.o
+build_run appearance build-host/core.o build-host/cover_codec.o build-host/decoder.o "${libs[@]}" -lm -ldl
 build_run badge_layout build-host/core.o "${libs[@]}"
 build_run disc source/disc_metadata.cpp build-host/core.o
 build_run storage_devices source/storage_devices.cpp source/optical_detection.cpp build-host/core.o
@@ -24,7 +25,7 @@ build_run keyboard source/keyboard.cpp build-host/core.o "${libs[@]}"
 build_run platform_network -D__PROSPERO__ source/platform.cpp "${libs[@]}"
 build_run socket_write
 build_run smb_lifecycle ${HOST_SMB_LIB:--lsmb2}
-build_run disc_player source/player.cpp build-host/decoder.o build-host/core.o -Wl,--wrap=SDL_ClearQueuedAudio "${libs[@]}" -lm -ldl
+build_run disc_player source/extended_audio.cpp source/player.cpp build-host/decoder.o build-host/core.o -Wl,--wrap=SDL_ClearQueuedAudio "${libs[@]}" -lm -ldl
 build_run cover_codec build-host/cover_codec.o build-host/core.o "${libs[@]}"
 build_run remote source/remote.cpp source/discovery.cpp source/websocket.cpp source/storage_devices.cpp source/optical_detection.cpp build-host/core.o
 build_run client source/client.cpp source/remote.cpp source/discovery.cpp source/websocket.cpp source/storage_devices.cpp source/optical_detection.cpp build-host/core.o

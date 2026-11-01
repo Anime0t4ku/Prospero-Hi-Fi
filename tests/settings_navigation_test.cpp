@@ -8,6 +8,7 @@ int main() {
     const auto fields = settingFields();
     std::set<int> seen;
     assert(!nav.entries && nav.current().name == "Appearance");
+    bool saverInAppearance=false;for(const auto &field:fields){assert(field["group"]!="Display");if(field["key"]=="screensaver_seconds")saverInAppearance=field["group"]=="Appearance";}assert(saverInAppearance);
     for (int i=0; i<int(nav.categories.size()); ++i) {
         nav.category=i;
         for (int index : nav.current().fields) {
@@ -24,7 +25,7 @@ int main() {
         assert(nav.current().selected==0);
     }
     assert(seen.size()==fields.size());
-    nav.category=0;nav.entries=true;nav.move(2,2);
+    nav.category=0;nav.entries=true;nav.move(10,2);
     assert(fields[nav.fieldIndex()]["key"]=="show_clock");
     nav.entries=false;nav.move(1,2);assert(nav.current().name=="Artwork");
     nav.move(-1,2);nav.entries=true;

@@ -9,13 +9,14 @@ HB := $(PS5_PAYLOAD_SDK)/target/user/homebrew
 BUILD := build-ps5
 TITLE := dist/PPSA99287
 HOST_CXX ?= c++
-CPPFLAGS := -DPROSPERO_PS5=1 -DSDL_MAIN_HANDLED -Iinclude -Ithird_party -Ips5/disc -I$(HB)/include -I$(HB)/include/SDL2
+FF := $(BUILD)/ffmpeg/install
+CPPFLAGS := -DPROSPERO_PS5=1 -DSDL_MAIN_HANDLED -Iinclude -Ithird_party -Ips5/disc -I$(FF)/include -I$(HB)/include -I$(HB)/include/SDL2
 CFLAGS := -O2 -g -fPIC -ffunction-sections -fdata-sections -fno-stack-protector -fno-plt -femulated-tls
 CXXFLAGS := $(CFLAGS) -std=c++17 -fexceptions -frtti
 SOURCES := $(wildcard source/*.cpp) $(wildcard ps5/disc/*.cpp) ps5/native/app_crt.cpp
 CSOURCES := source/decoder.c source/cover_codec.c source/compat.c
 OBJECTS := $(patsubst %.cpp,$(BUILD)/%.o,$(SOURCES)) $(patsubst %.c,$(BUILD)/%.o,$(CSOURCES))
-LIBS := -lSDL2_image -lpng16 -ljpeg -lwebp -lsharpyuv -lSDL2_ttf -lfreetype -lharfbuzz -lbz2 -lcurl -lpsl -lssl -lcrypto -lzstd -lsmb2 -lSDL2 -lsamplerate -liconv -lz -lm
+LIBS := $(FF)/lib/libavformat.a $(FF)/lib/libavcodec.a $(FF)/lib/libswresample.a $(FF)/lib/libavutil.a -lSDL2_image -lpng16 -ljpeg -lwebp -lsharpyuv -lSDL2_ttf -lfreetype -lharfbuzz -lbz2 -lcurl -lpsl -lssl -lcrypto -lzstd -lsmb2 -lSDL2 -lsamplerate -liconv -lz -lm
 STUBS := $(filter-out %libkernel_web.so %libkernel_sys.so %libScePosixForWebKit.so %libc_stub_weak.so %libkernel_stub_weak.so,$(wildcard $(PS5_PAYLOAD_SDK)/target/lib/*.so))
 .PHONY: all package
 all: package
@@ -33,7 +34,10 @@ $(BUILD)/sdl/libSDL2.a: $(wildcard third_party/SDL-ps5/src/video/ps5/*.[ch]) $(w
 	cmake --build $(BUILD)/sdl -j4
 $(BUILD)/access-helper.elf: ps5/access_helper.c
 	$(CC) -O2 $< -o $@
-$(BUILD)/app-pie.elf: $(OBJECTS) $(BUILD)/sdl/libSDL2.a Makefile.ps5
+$(BUILD)/ffmpeg/install/lib/libavformat.a: scripts/build-ffmpeg.sh
+	bash scripts/build-ffmpeg.sh
+$(BUILD)/source/extended_audio.o: $(BUILD)/ffmpeg/install/lib/libavformat.a
+$(BUILD)/app-pie.elf: $(OBJECTS) $(BUILD)/sdl/libSDL2.a $(FF)/lib/libavformat.a Makefile.ps5
 	$(LD) -m elf_x86_64 -pie -z max-page-size=0x4000 --eh-frame-hdr --gc-sections --hash-style=gnu -T ps5/native/ps5-pie.ld -T ps5/native/ehframe.ld -e _start --no-dynamic-linker -o $@ $(OBJECTS) -L$(BUILD)/sdl -L$(HB)/lib -L$(PS5_PAYLOAD_SDK)/target/lib --start-group $(LIBS) -lc++ -lc++abi -lunwind -lc -lpthread --end-group --as-needed $(STUBS)
 $(BUILD)/eboot.elf: $(BUILD)/app-pie.elf $(BUILD)/native-tool Makefile.ps5
 	python3 tools/genmap.py $(BUILD)/app-pie.elf $(PS5_PAYLOAD_SDK)/target/lib $(BUILD)/exports.map

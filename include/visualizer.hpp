@@ -34,6 +34,7 @@ class Visualizer {
         if(!valid&&energy<.005f)history.clear();
         int x=area.x,y=area.y,w=area.w,h=area.h;if(w<4||h<4)return;
         UI::Clip clip(ui,x,y,w,h);
+        Color ACCENT=s.visualizerColour=="theme"?nxh::ACCENT:readableAccent(rgbColour(s.visualizerColour),BG);
         auto ink=[&](float strength){return blend(BG,ACCENT,strength);};
         auto line=[&](float a,float b,float c,float d,Color color){ui.visualizerLine(int(a),int(b),int(c),int(d),color);};
         auto interpolate=[&](const std::array<float,32>& values,float fraction){float f=std::clamp(fraction,0.f,1.f)*31;int i=int(f);return values[i]+(values[std::min(31,i+1)]-values[i])*(f-i);};

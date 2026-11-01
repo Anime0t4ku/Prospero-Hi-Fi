@@ -6,8 +6,10 @@
 #include <array>
 #include <cstdio>
 #include <fstream>
+#include <future>
 namespace nxh {
 struct FrameDiagnostics {
+    std::future<void> writer;
     const char *view="menu";
     std::string renderError;
     Uint64 flushTicks=0,presentTicks=0,first=0;
@@ -29,9 +31,14 @@ struct FrameDiagnostics {
         if(!renderError.empty())data["render_error"]=renderError;
         const char *names[]={"display_poll_ms","input_ms","update_ms","draw_enqueue_ms","render_submit_ms","present_ms"};
         for(size_t i=0;i<sum.size();i++)data[names[i]]={{"average",sum[i]/frames},{"max",peak[i]}};
-        const char *tmp="/data/prospero-hifi/performance.json.tmp";
-        {std::ofstream out(tmp);if(out)out<<data.dump(2)<<'\n';}
-        std::rename(tmp,"/data/prospero-hifi/performance.json");
+        if(!writer.valid()||writer.wait_for(std::chrono::milliseconds(0))==std::future_status::ready){
+            if(writer.valid())writer.get();
+            writer=std::async(std::launch::async,[data=std::move(data)]{
+                const char *tmp="/data/prospero-hifi/performance.json.tmp";
+                {std::ofstream out(tmp);if(out)out<<data.dump(2)<<'\n';}
+                std::rename(tmp,"/data/prospero-hifi/performance.json");
+            });
+        }
         first=now;frames=0;sum.fill(0);peak.fill(0);
     }
 };

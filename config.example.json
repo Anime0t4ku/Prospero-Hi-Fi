@@ -35,5 +35,15 @@
   "visualizer_style": 0,
   "visualizer_sensitivity": 100,
   "visualizer_smoothing": 65,
-  "visualizer_expand": true
+  "visualizer_expand": true,
+  "background_animation": 1,
+  "menu_opacity": 85,
+  "background_speed": 100,
+  "look": "modern",
+  "visualizer_colour": "theme",
+  "collections_view": "list",
+  "radio_view": "list",
+  "playlists_view": "list",
+  "full_player_card": false,
+  "exit_fullscreen_on_stop": false
 }

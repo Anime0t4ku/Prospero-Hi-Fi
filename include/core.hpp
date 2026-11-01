@@ -2,6 +2,7 @@
 #include "json.hpp"
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -11,14 +12,14 @@
 #include <vector>
 
 namespace nxh {
-constexpr const char *Version = "1.3.0";
+constexpr const char *Version = "2.0.0";
 // Additive identity: legacy NX clients still use the existing wire format.
 inline nlohmann::json remoteIdentity(){
     return {{"app_id","prospero-hifi"},{"name","Prospero Hi-Fi"},{"platform","ps5"},
         {"version",Version},{"protocol_version",1},
-        {"capabilities",{{"independent_control",true},{"screen_control",true},
+        {"capabilities",{{"independent_control",true},{"screen_control",false},
             {"settings_schema",true},{"dynamic_sources",true},{"source_management",true},
-            {"equalizer",true},{"listening_mode",true},{"outgoing_remote",false}}}};
+            {"radio",true},{"personal_libraries",true},{"m4a",true},{"equalizer",true},{"listening_mode",true},{"outgoing_remote",false}}}};
 }
 struct Share {
     std::string name, server, share, folder, user, password, domain;
@@ -33,6 +34,10 @@ struct Settings {
     std::string musicRoot;
     std::map<std::string,std::string> storageFolders;
     std::string theme = "dark", accent = "#3B82F6";
+    int backgroundAnimation = 1;
+    int menuOpacity=85,backgroundSpeed=100;
+    std::string look="modern",visualizerColour="theme",collectionsView="list",radioView="list",playlistsView="list";
+    bool animatedBackground = true;
     bool showClock = true, clock24h = true, showArtwork = true, hideMissingArt = false;
     bool preferFolderArt = false, visualizer = true, rememberShuffleRepeat = true;
     int visualizerStyle = 0, visualizerSensitivity = 100, visualizerSmoothing = 65;
@@ -40,7 +45,7 @@ struct Settings {
     bool wrapNavigation = true, holdRepeat = true, remoteEnabled = true;
     int screensaverSeconds = 0, remotePort = 8182;
     int volume = 100;
-    bool autoFullscreen = false;
+    bool autoFullscreen = false,fullPlayerCard=false,exitFullscreenOnStop=false;
     bool listeningHideTitle=true, listeningHideClock=true, listeningHideMetadata=true, listeningHideFooter=true;
     bool shuffle = false, gaplessPlayback = true;
     int repeat = 0;
@@ -119,6 +124,8 @@ class Input {
   public:
     virtual ~Input() = default;
     virtual std::string error() const { return {}; }
+    virtual std::string streamTitle() const { return {}; }
+    virtual void resumeGeneration(const std::atomic<uint64_t> *,uint64_t) {}
     virtual size_t read(void *dst, size_t size) = 0;
     virtual bool seek(int64_t offset, int origin) = 0;
     virtual uint64_t position() const = 0;
@@ -142,11 +149,12 @@ class BufferedInput final : public Input {
     std::unique_ptr<Input> inner_;
     std::vector<unsigned char> buffer_;
     uint64_t pos_ = 0, start_ = 0;
-    size_t count_ = 0;
+    size_t count_ = 0,refill_=16*1024;
 
   public:
     explicit BufferedInput(std::unique_ptr<Input> inner, size_t capacity = 512 * 1024);
     std::string error() const override { return inner_->error(); }
+    void resumeGeneration(const std::atomic<uint64_t> *g,uint64_t e)override{inner_->resumeGeneration(g,e);}
     size_t read(void *, size_t) override;
     bool seek(int64_t, int) override;
     uint64_t size() const override { return inner_->size(); }

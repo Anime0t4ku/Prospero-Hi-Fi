@@ -13,12 +13,12 @@ class MemoryInput : public Input {
   public:
     std::vector<unsigned char> data;
     uint64_t pos = 0;
-    int reads = 0;
+    int reads = 0;uint64_t bytesRead=0;
     size_t read(void *out, size_t n) override {
         reads++;
         n = std::min<uint64_t>(n, data.size() - pos);
         std::memcpy(out, data.data() + pos, n);
-        pos += n;
+        pos += n;bytesRead+=n;
         return n;
     }
     bool seek(int64_t n, int origin) override {
@@ -428,6 +428,10 @@ static void testRemoteSettings() {
 }
 
 int main() {
+ {auto memory=std::make_unique<MemoryInput>();memory->data.resize(1024*1024);auto *raw=memory.get();BufferedInput input(std::move(memory));unsigned char header[12];assert(input.read(header,12)==12&&raw->bytesRead==16384);input.seek(0,SEEK_SET);assert(input.read(header,12)==12&&raw->bytesRead==16384);input.seek(300000,SEEK_SET);assert(input.read(header,12)==12&&raw->bytesRead==16384+32768);}
+
+ {MemoryInput input;const size_t picture=2*1024*1024;std::string title="After picture";size_t tag=10+picture+10+1+title.size();input.data.resize(10+tag+2048);auto be=[&](size_t at,size_t value,int count,bool sync=false){for(int i=0;i<count;i++)input.data[at+i]=(value>>((count-i-1)*(sync?7:8)))&(sync?127:255);};std::memcpy(input.data.data(),"ID3",3);input.data[3]=3;be(6,tag,4,true);std::memcpy(input.data.data()+10,"APIC",4);be(14,picture,4);size_t frame=20+picture;std::memcpy(input.data.data()+frame,"TIT2",4);be(frame+4,title.size()+1,4);input.data[frame+10]=0;std::memcpy(input.data.data()+frame+11,title.data(),title.size());auto details=readTrackDetails(input,"test.mp3",true);assert(details.title==title&&input.bytesRead<256*1024&&input.position()==0);}
+
     testRemoteSettings();
     testAppearanceAndTiming();
     testMetadata();
@@ -438,7 +442,7 @@ int main() {
     assert(!safeRelative("/absolute"));
     assert(!safeRelative("Albums\\secret"));
     assert(audioFile("A.FLAC"));
-    assert(!audioFile("A.m4a"));
+    assert(audioFile("A.m4a"));
     assert(!audioFile("README.txt"));
     auto mem = std::make_unique<MemoryInput>();
     mem->data.resize(65536);

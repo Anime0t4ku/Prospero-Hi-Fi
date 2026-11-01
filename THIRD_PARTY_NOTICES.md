@@ -27,3 +27,7 @@ All original attribution headers remain in the source. No game files, BIOS, prop
   blend-state reference. Revision: f410e67a0241b3e8edcdbcd2a9b285dfc4a412ed.
 - The added ps5agc SDL renderer is GPL-3.0-or-later and explicitly marked as
   application-specific; the surrounding SDL sources retain their zlib notices.
+
+## FFmpeg
+
+FFmpeg 7.1.1 supplies AAC/ALAC and live audio decoding through custom I/O. Built without GPL or nonfree components, under LGPL-2.1-or-later. Full source and the build script are included in `third_party/ffmpeg` and `scripts/build-ffmpeg.sh`. See `licenses/FFmpeg-LGPL-2.1.txt`.

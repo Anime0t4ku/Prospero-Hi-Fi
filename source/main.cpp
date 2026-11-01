@@ -1,6 +1,10 @@
 #include "input_timing.hpp"
 #include "player_navigation.hpp"
 #include "visualizer.hpp"
+#include "collection.hpp"
+#include "album_pages.hpp"
+#include <random>
+#include "extended_audio.hpp"
 #include "settings_navigation.hpp"
 #include "storage_devices.hpp"
 #include "frame_diagnostics.hpp"
@@ -13,8 +17,6 @@
 #include "remote.hpp"
 #include "remote_view.hpp"
 #include "discovery.hpp"
-#include "screen_control.hpp"
-#include "remote_keyboard.hpp"
 #include <future>
 #include <ctime>
 #include <arpa/inet.h>
@@ -25,8 +27,6 @@
 using namespace nxh;
 static const std::string ConfigPath = configPath();
 static bool keyboard(const std::string &label, std::string &value, bool password = false) {
-    if (remoteKeyboard.intercept)
-        return remoteKeyboard.request(label, value, password);
     return prosperoKeyboard(label, value, password);
 
 }
@@ -64,7 +64,7 @@ class App {
                 }
                 delete old;
             }));
-        setAppearance(settings.theme, settings.accent);
+        setAppearance(settings.theme, settings.accent,settings.menuOpacity,settings.look);
     }
     void connectTarget(int index) {
         if (index >= 0 && index < int(settings.remoteClients.size()))
@@ -132,7 +132,8 @@ class App {
             selected = scroll = 0;
         }
     }
-    Loader browser, art;
+    Loader browser, art, tags;
+    std::string tagKey;
     int page = 0, selected = 0, scroll = 0;
     struct BrowsePosition {
         int selected = 0, scroll = 0;
@@ -162,15 +163,17 @@ class App {
     void drawOptions() {
         if (!optionApply)
             return;
-        ui.rect(140, 100, 1000, 510 + layout().extraHeight(), PANEL);
+        ui.rect(140, 100, 1000, 510 + layout().extraHeight(), {PANEL.r,PANEL.g,PANEL.b,250});
         ui.text(170, 120, optionTitle, 26, ACCENT);
         int first = layout().optionFirst(optionIndex);
+        ui.scrollIndicator(1117,170,layout().optionRows()*48-6,int(optionLabels.size()),first,layout().optionRows());
         for (int i = first; i < std::min(first + layout().optionRows(), int(optionLabels.size()));
              ++i)
             ui.button(170, 170 + (i - first) * 48, 940, 42, optionLabels[i], i == optionIndex);
     }
     bool sourceSelected = false, controlsFocused = false;
     SettingsNavigation settingsNavigation;
+    int settingsCategoryScroll=0;
     int control = 0;
     PlayerNavigation menuFocus,fullFocus{2,1};
     PlayerNavigation &playerFocus(){return fullscreen?fullFocus:menuFocus;}
@@ -185,7 +188,8 @@ class App {
         syncPlayerFocus();
     }
     void playerHorizontal(int delta){
-        if(playerFocus().seek())player.seek(delta*10);
+        if(fullscreen&&fullFocus.row==-1)cycleVisualizer(delta);
+        else if(playerFocus().seek())player.seek(delta*10);
         else if(playerFocus().volume(fullscreen)){settings.volume=std::clamp(settings.volume+delta*5,0,100);persist();}
         else playerFocus().horizontal(fullscreen,delta);
         syncPlayerFocus();
@@ -193,7 +197,7 @@ class App {
     void playerAction(){
         int action=playerFocus().action(fullscreen);
         if(fullscreen&&fullFocus.row==-1){if(canExpandVisualizer())visualizerFullscreen=true;return;}
-        if(action==6){playerSettingsOpen=true;playerSettingsTab=0;playerSettingsRow=-1;}
+        if(action==6){playerSettingsOpen=true;playerSettingsTab=0;playerSettingsRow=0;}
         else if(action==7)toggleFullscreen();
         else if(action>=0)transport(action);
     }
@@ -205,11 +209,13 @@ class App {
     std::array<int, 3> customRGB{};
     double scrubPosition = 0;
     std::string scrubTrack;
+    std::string colourTarget="accent_colour";
+    void colourChoices(const std::string &key){std::vector<nlohmann::json> values;std::vector<std::string> labels;if(key=="visualizer_colour"){values.push_back("theme");labels.push_back("Theme colour");}for(auto &preset:accentPresets){values.push_back(preset.hex);labels.push_back(preset.name);}values.push_back("custom");labels.push_back("Custom...");auto current=settingsDocument(settings)[key];if(current.is_string()&&current.template get<std::string>()!="theme")current=colourHex(colourRGB(current.template get<std::string>()));if(std::find(values.begin(),values.end(),current)==values.end())current="custom";choose(key=="visualizer_colour"?"Visualizer colour":"Accent colour",values,labels,current,[this,key](auto v){if(v=="custom"){colourTarget=key;openColours();}else applySettings({{key,v}});});}
     void openColours() {
         colourPicking = true;
         status = "";
         colourSelection = 0;
-        customRGB = colourRGB(settings.accent);
+        customRGB = colourRGB(colourTarget=="visualizer_colour"&&settings.visualizerColour!="theme"?settings.visualizerColour:settings.accent);
         for (int i = 0; i < 10; i++)
             if (settings.accent == accentPresets[i].hex)
                 colourSelection = i;
@@ -218,7 +224,7 @@ class App {
         if (!colourPicking)
             return false;
         for (int i = 0; i < 3; i++)
-            if (inside(x, y, 210, 326 + i * 47, 600, 36)) {
+            if (inside(x-198, y, 210, 326 + i * 47, 600, 36)) {
                 colourDrag = i;
                 colourSelection = 10 + i;
                 dragColour(x);
@@ -228,22 +234,14 @@ class App {
     }
     void dragColour(int x) {
         if (colourDrag >= 0)
-            customRGB[colourDrag] = std::clamp((x - 210) * 255 / 600, 0, 255);
+            customRGB[colourDrag] = std::clamp((x - 198 - 210) * 255 / 600, 0, 255);
     }
     void closeColours(bool save) {
-        if (save) {
-            auto before = settings.accent;
-            settings.accent = colourHex(customRGB);
-            if (!persist()) {
-                settings.accent = before;
-                player.settings(settings);
-                return;
-            }
-        }
+        if(save){applySettings({{colourTarget,colourHex(customRGB)}});}
         colourPicking = false;
         colourDrag = -1;
         mouseColourDrag = false;
-        setAppearance(settings.theme, settings.accent);
+        setAppearance(settings.theme, settings.accent,settings.menuOpacity,settings.look);
     }
     void colourAction() {
         if (colourSelection < 10)
@@ -325,6 +323,9 @@ class App {
     }
     bool fullscreen = false;
 #include "app_visualizer.inc"
+#include "app_collections.inc"
+#include "app_album_pages.inc"
+#include "app_playlists.inc"
     bool listening=false;
     u64 listeningBlocked=0;
     void setListening(bool enabled){
@@ -362,10 +363,10 @@ class App {
     std::mutex callsMutex;
     std::deque<std::shared_ptr<RemoteCall>> calls;
     int playerX() const {
-        return artworkVisible() ? 560 : 64;
+        return artworkVisible() ? 560 : (fullscreen&&settings.fullPlayerCard?84:64);
     }
     int playerWidth() const {
-        return artworkVisible() ? 656 : 1152;
+        return 1200-(fullscreen&&settings.fullPlayerCard?20:0)-playerX();
     }
     bool artworkVisible() const {
         return settings.showArtwork && (artTexture || !settings.hideMissingArt);
@@ -445,9 +446,20 @@ class App {
         using J = nlohmann::json;
         auto fail = [](std::string error) { return J{{"ok", false}, {"error", error}}; };
         std::string op = j.value("op", std::string{});
+        if(op=="disc_eject"){if(!discConnected||discSignature.empty())return fail("Insert audio CD");startDiscEject();return {{"ok",true}};}
+        if(op=="playlist_play"){auto key="playlist:"+j.at("id").get<std::string>();if(!savedPlaylist(j.at("id")))return fail("Playlist no longer exists.");playAlbumPage(key,j.value("index",0),j.value("shuffle",false));return {{"ok",true}};}
+        if(op=="disc_refresh"){if(!discConnected)return fail("No USB optical drive connected.");discSignature.clear();albumPages.invalidate("disc");discProbeAt=0;return {{"ok",true}};}
+        if(op=="disc_play"){if(!discConnected||discSignature.empty())return fail("Insert audio CD");playAlbumPage("disc",j.value("index",0),j.value("shuffle",false));return {{"ok",true}};}
+        if(op=="album_open"){auto id=j.at("id").get<std::string>();if(!requestAlbumPage(id,j.value("refresh",false)))return fail(status);return {{"ok",true}};}
+        if(op=="album_track"){auto id=j.at("id").get<std::string>();if(!collectionAlbum(id))return fail("Album no longer exists.");playAlbumPage(id,j.value("index",0),j.value("shuffle",false));return {{"ok",true}};}
+        if(op.rfind("playlist_",0)==0||op.rfind("library_",0)==0||op.rfind("album_",0)==0||op.rfind("station_",0)==0||op=="catalog_get"){
+            if(op=="station_play"){for(auto &station:catalog["stations"])if(station["id"]==j.at("id")){playStation(station);return {{"ok",true}};}return fail("Station no longer exists.");}
+            if(op=="album_play"){for(auto &album:catalog["albums"])if(album["id"]==j.at("id")){Source src;std::string error;if(!resolveReference(album["source"],settings,src,error))return fail(error);std::vector<Track> tracks;for(auto &t:album["tracks"])tracks.push_back({src,t["path"],t["name"]});if(tracks.empty())return fail("No tracks in this album; refresh it.");player.play(std::move(tracks),0);return {{"ok",true}};}return fail("Album no longer exists.");}
+            if(op=="album_add"&&(!j.contains("sources_revision")||j["sources_revision"]!=sourcesRevision))return fail("Files changed; refresh the browser.");
+            auto response=collection->command(j,settings);refreshCatalog();if(response.value("ok",false)&&op=="album_refresh")requestAlbumPage(j.at("id"),true);lastPublish=0;return response;
+        }
         if (op.rfind("screen_", 0) == 0)
-            return screenCommand(j);
-        remoteKeyboard.cancel();
+            return fail("Screen Control has been removed.");
         auto sourceCheck = [&] {
             return j.contains("sources_revision") && j["sources_revision"].is_number_integer() &&
                    j["sources_revision"].get<uint64_t>() == sourcesRevision;
@@ -497,7 +509,7 @@ class App {
                 return fail(status);
         } else if (op == "source_save" || op == "source_remove") {
             if (!sourceCheck())
-                return fail("Sources changed; refresh and try again.");
+                return fail("Files changed; refresh and try again.");
             int index = j.value("index", -1);
             if (index < -1 || index >= int(settings.shares.size()))
                 return fail("Source no longer exists.");
@@ -526,7 +538,7 @@ class App {
         } else if (op == "play") {
             playbackTrace("main.remote-play.begin");
             if (!sourceCheck())
-                return fail("Sources changed; refresh and try again.");
+                return fail("Files changed; refresh and try again.");
             int index = j.value("source", -1);
             if(index>=int(settings.shares.size()))return fail("Source no longer exists.");
             Source src;
@@ -556,7 +568,7 @@ class App {
         else if (op == "next")
             player.next();
         else if (op == "stop")
-            player.stop();
+            stopPlayback();
         else if (op == "shuffle") {
             if (!applySettings({{"shuffle", !settings.shuffle}}))
                 return fail(status);
@@ -586,9 +598,10 @@ class App {
         lastPublish = 0;
         return {{"ok", true}, {"revision", revision}, {"sources_revision", sourcesRevision}};
     }
-    nlohmann::json remoteState() {
+    std::string publishedStructure;
+    nlohmann::json remoteState(bool full=true) {
         using J = nlohmann::json;
-        auto p = player.snapshot();
+        auto p = libraryPlayback(player.snapshot());
         auto badges = J::array();
         if (!p.details.format.empty())
             badges.push_back(p.details.format);
@@ -601,6 +614,8 @@ class App {
         }
         if (p.details.bitRate)
             badges.push_back(std::to_string(p.details.bitRate) + " kbps");
+        J result={{"revision",revision},{"clock",clock()}};
+        if(full){
         auto eqPresets = J::array();
         for (auto &preset : presets)
             eqPresets.push_back({{"name", preset.name}, {"gains", preset.gains}});
@@ -609,10 +624,12 @@ class App {
             accents.push_back({{"name", preset.name}, {"hex", preset.hex}});
         auto localSources=J::array();
         for(auto &device:storageDevices_)localSources.push_back({{"id",device.id},{"name",device.name},{"mount",device.mount},{"folder",storageFolder(settings,device)}});
-        return {{"identity",remoteIdentity()}, {"app_id","prospero-hifi"}, {"protocol_version",1}, {"listening_mode",listening},
+        J structure={{"identity",remoteIdentity()}, {"app_id","prospero-hifi"}, {"protocol_version",1}, {"listening_mode",listening},
                 {"version", Version},
+                {"catalog",catalog},
+                {"album_views",albumPages.snapshot()},{"disc_connected",discConnected},{"disc_ejecting",discEjecting},{"disc_eject_error",discEjectError},{"disc_signature",discSignature},{"disc_view",albumPage("disc")},
                 {"local_sources",localSources},
-                {"physical_disc", std::any_of(storageDevices_.begin(),storageDevices_.end(),[](const auto &d){return d.id==-2;})},
+                {"physical_disc",discConnected},
                 {"revision", revision},
                 {"sources_revision", sourcesRevision},
                 {"settings", settingsDocument(settings)},
@@ -620,7 +637,10 @@ class App {
                 {"presets", eqPresets},
                 {"accents", accents},
                 {"clock", clock()},
-                {"remote_address", remoteAddress},
+                {"remote_address", remoteAddress}};
+        if(full) result.update(structure);
+        }
+        result.update({
                 {"playback",
                  {{"title", trackTitle(p)},
                   {"artist", p.details.artist},
@@ -630,14 +650,17 @@ class App {
                   {"count", p.count},
                   {"position", p.position},
                   {"duration", p.duration},
+                  {"live",p.track.source.root==RadioRoot},
                   {"duration_estimated", p.details.durationEstimated},
                   {"playing", p.playing},
                   {"paused", p.paused},
                   {"busy", p.busy},
                   {"error", p.error},
                   {"spectrum", p.spectrum},
+                  {"track_path",p.track.path},{"source_ref",sourceReference(p.track.source)},
                   {"track_key", p.track.source.share.server + "/" + p.track.source.share.share +
-                                    "/" + p.track.source.root + "/" + p.track.path}}}};
+                                    "/" + p.track.source.root + "/" + p.track.path}}}});
+        return result;
     }
     void retireRemote() {
         if (!remote)
@@ -660,8 +683,6 @@ class App {
                 call->result.set_value(remoteCommand(call->request));
                 playbackTrace("main.command.replied");
             } catch (...) {
-                remoteKeyboard.intercept = false;
-                remoteKeyboard.cancel();
                 call->result.set_value({{"ok", false}, {"error", "Invalid remote command."}});
             }
         }
@@ -677,7 +698,6 @@ class App {
             if (!reconfigureRemoteAt)
                 reconfigureRemoteAt = now + 350;
             if (now < reconfigureRemoteAt) {
-                remote->publish(remoteState(), settings, sourcesRevision);
                 return;
             }
             retireRemote();
@@ -703,6 +723,7 @@ class App {
                 remote.reset();
                 return;
             }
+            remote->albumArtwork([this](const std::string &id){for(auto type:{std::string("station"),std::string("collection"),std::string("playlist")})if(id.rfind(type+"-",0)==0){std::ifstream image(collection->imagePath(type,id.substr(type.size()+1)),std::ios::binary);return std::vector<unsigned char>(std::istreambuf_iterator<char>(image),{});}if(id=="disc")return albumPages.cover("disc");std::ifstream f(collection->coverPath(id),std::ios::binary);auto bytes=std::vector<unsigned char>((std::istreambuf_iterator<char>(f)),{});return bytes.empty()?albumPages.cover(id):bytes;});
             remote->artwork(remoteArt);
             if (remoteArt.empty() && settings.showArtwork)
                 artKey.clear();
@@ -719,13 +740,27 @@ class App {
                                 ? "http://" + ip + ":" + std::to_string(settings.remotePort)
                                 : "Remote server running on port " + std::to_string(settings.remotePort) + " (IP unavailable)";
         }
-        if (!lastPublish || now - lastPublish >= 50) {
-            lastPublish = now;
-            remote->publish(remoteState(), settings, sourcesRevision);
+        auto structureKey=std::to_string(revision)+":"+std::to_string(sourcesRevision)+":"+catalog["revision"].dump()+":"+std::to_string(albumPages.revision())+":"+discSignature+":"+std::to_string(discConnected)+":"+std::to_string(discEjecting)+discEjectError+":"+std::to_string(listening)+remoteAddress;
+        bool structural=structureKey!=publishedStructure||!lastPublish;
+        if(structural||now-lastPublish>=(remote->wantsLive()?100:1000)){
+            lastPublish=now;publishedStructure=std::move(structureKey);
+            remote->publish(remoteState(structural),settings,sourcesRevision);
         }
+    }
+    bool settingDisabled(const nlohmann::json &field)const{
+        if(field.value("disabled_with_oled",false)&&settings.theme=="oled")return true;
+        auto required=field.value("requires_enabled",std::string{});
+        if(required=="background_animation")return !settings.animatedBackground||settings.backgroundAnimation==0;
+        if(required=="show_clock")return !settings.showClock;
+        return false;
     }
     std::string settingText(const nlohmann::json &field) const {
         std::string key = field["key"], kind = field["kind"];
+        if(key=="menu_opacity"||key=="background_speed")return std::to_string(key=="menu_opacity"?settings.menuOpacity:settings.backgroundSpeed)+"%";
+        if(key=="collections_view"||key=="radio_view"||key=="playlists_view")return settingsDocument(settings)[key]=="grid"?"Grid":"List";
+        if(key=="visualizer_colour")return settings.visualizerColour=="theme"?"Theme colour":settings.visualizerColour;
+        if(key=="look")return settings.look=="classic"?"Classic":"Modern";
+        if(key=="background_animation")return settings.theme=="oled"?"Unavailable with OLED theme":std::array<const char*,4>{{"Off","Ambient drift","Aurora","Gradient waves"}}[settings.animatedBackground?settings.backgroundAnimation:0];
         if(key=="visualizer_style")return visualizerName(settings.visualizerStyle);
         if(kind=="action")return "";
         if(key=="eq_preset")return settingsDocument(settings)[key].get<int>()<0?"Custom":presets[settingsDocument(settings)[key].get<int>()].name;
@@ -754,13 +789,14 @@ class App {
         auto fields = settingFields();
         auto field = fields[settingsNavigation.fieldIndex()];
         std::string key = field["key"], kind = field["kind"];
+        if(settingDisabled(field))return;
         if(kind=="gain"){float gain=settingsDocument(settings)[key].get<float>();applySettings({{key,std::clamp(gain+direction*.5f,-6.f,6.f)}});return;}
         if(kind=="action"){applySettings({{key,true}});return;}
         if(key=="visualizer_style"||key=="visualizer_sensitivity"||key=="visualizer_smoothing"){visualizerChoice(key);return;}
         if (kind == "info")
             return;
         if (kind == "colour") {
-            openColours();
+            colourChoices(key);
             return;
         }
         auto values = settingsDocument(settings);
@@ -824,7 +860,7 @@ class App {
     bool gesture = false;
     ButtonRepeat verticalRepeat;
     void changePage(int p) {
-        page = std::clamp(p, 0, 3);if(page==2)page=3;
+        page = p==0||p==1||p==3||p==5||p==6||p==7||p==8||p==9||p==10?p:0;
         clientEditing = false;
         controlsFocused = false;
         editing = false;
@@ -833,6 +869,19 @@ class App {
         selected = scroll = 0;
         status = "";
     }
+    int sourceTabPage=0;
+    std::map<int,std::pair<int,int>> tabPositions;
+    int mainTab()const{return page==5||page==7?5:page==3?3:page==6?6:page==8?8:page==9||page==10?9:0;}
+    void selectTab(int tab){
+        if(tab==mainTab())return;
+        tabPositions[page]={selected,scroll};
+        if(mainTab()==0)sourceTabPage=page;
+        int target=tab==0?(sourceTabPage==1&&!sourceSelected?0:sourceTabPage):tab==5&&!collectionAlbumID.empty()?7:tab==9&&!playlistID.empty()?10:tab;
+        changePage(target);
+        auto remembered=tabPositions.find(target);
+        if(remembered!=tabPositions.end()){selected=std::clamp(remembered->second.first,0,maxSelection());scroll=std::min(selected,remembered->second.second);}
+    }
+    void switchTab(int direction){auto tabs=mainTabs();int at=0;for(int i=0;i<int(tabs.size());i++)if(tabs[i].second==mainTab())at=i;selectTab(tabs[(at+direction+int(tabs.size()))%tabs.size()].second);}
     bool persist() {
         std::string error;
         bool ok = saveSettings(settingsPath, settings, error);
@@ -846,6 +895,7 @@ class App {
         return ok;
     }
     void browse(Source s, const std::string &path) {
+        albumContextID.clear();
         if (sourceSelected && !loading)
             browsePositions[browseKey()] = {selected, scroll, {}};
         sourceSelected = true;
@@ -881,7 +931,7 @@ class App {
     }
     void saveShare() {
         if (editSourcesRevision != sourcesRevision) {
-            status = "Sources changed; reopen this editor before saving.";
+            status = "Files changed; reopen this editor before saving.";
             return;
         }
         std::string error;
@@ -951,7 +1001,7 @@ class App {
             break;
         case 10:
             if (editSourcesRevision != sourcesRevision) {
-                status = "Sources changed; reopen this editor.";
+                status = "Files changed; reopen this editor.";
                 return;
             }
             if (editIndex >= 0) {
@@ -971,6 +1021,10 @@ class App {
         }
     }
     int maxSelection() const {
+        if(page==7||page==8||page==10){const auto &data=albumPage(currentAlbumKey());return data.contains("tracks")?std::max(0,int(data["tracks"].size())-1):0;}
+        if(page==5)return libraryID.empty()?int(catalog["libraries"].size()):std::max(0,int(libraryAlbums().size())-1);
+        if(page==6)return catalog["stations"].size();
+        if(page==9)return catalog["playlists"].size();
         if (page == 4)
             return clientEditing ? (editClientIndex < 0 ? 4 : 5)
                                  : int(settings.remoteClients.size()) + 1;
@@ -988,11 +1042,6 @@ class App {
             optionIndex = (optionIndex + delta + int(optionValues.size())) % optionValues.size();
             return;
         }
-        if(playerSettingsOpen){playerSettingsRow=std::clamp(playerSettingsRow+delta,-1,playerSettingsTab?4:7);return;}
-        if (fullscreen || controlsFocused) {
-            playerVertical(delta);
-            return;
-        }
         if (colourPicking) {
             if (colourSelection < 10)
                 colourSelection = delta > 0 ? (colourSelection < 5 ? colourSelection + 5 : 10)
@@ -1003,6 +1052,14 @@ class App {
                                       : std::clamp(colourSelection + delta, 10, 15);
             return;
         }
+        if(playerSettingsOpen){playerSettingsRow=std::clamp(playerSettingsRow+delta,0,playerSettingsTab?5:7);return;}
+        if (fullscreen || controlsFocused) {
+            playerVertical(delta);
+            return;
+        }
+
+        if(page==7||page==8||page==10){int count=maxSelection()+1;selected=(selected+delta+count)%count;scroll=std::clamp(scroll,std::max(0,selected-albumVisibleRows()+1),selected);return;}
+        if((page==5||page==6||page==9)&&collectionGrid()){collectionVertical(delta);return;}
         if (page == 3) {
             settingsNavigation.move(delta, layout().rows());
             return;
@@ -1014,6 +1071,7 @@ class App {
         if (selected >= scroll + layout().rows())
             scroll = selected - layout().rows() + 1;
     }
+    void stopPlayback(){player.stop();if(fullscreen&&settings.exitFullscreenOnStop){playerSettingsOpen=false;visualizerFullscreen=false;toggleFullscreen();}}
     void transport(int index) {
         switch (index) {
         case 0:
@@ -1026,7 +1084,7 @@ class App {
             player.next();
             break;
         case 3:
-            player.stop();
+            stopPlayback();
             break;
         case 4:
             settings.shuffle = !settings.shuffle;
@@ -1059,6 +1117,7 @@ class App {
             f(optionValues[optionIndex]);
             return;
         }
+        if(colourPicking){colourAction();return;}
         if(playerSettingsOpen){playerSettingsChange();return;}
         if (page == 4 && !controlsFocused && !fullscreen) {
             clientAction();
@@ -1072,6 +1131,8 @@ class App {
             playerAction();
             return;
         }
+        if(page==7||page==8||page==10){albumPageAction();return;}
+        if(page==5||page==6||page==9){collectionAction();return;}
         if (editing) {
             editField();
             return;
@@ -1101,11 +1162,15 @@ class App {
             move(dir);
             return;
         }
+        if(colourPicking){colourAdjust(dir);return;}
         if(playerSettingsOpen){playerSettingsChange(dir);return;}
         if (fullscreen || controlsFocused) {
             playerHorizontal(dir);
             return;
         }
+        if((page==7||page==8||page==10)&&!controlsFocused&&!fullscreen){return;}
+        if((page==5||page==6||page==9)&&collectionGrid()&&!controlsFocused&&!fullscreen){int n=maxSelection()+1;selected=settings.wrapNavigation?(selected+dir+n)%n:std::clamp(selected+dir,0,n-1);return;}
+        if(page==5||page==6||page==9){move(dir);return;}
         if (!editing && (page == 0 || page == 1)) {
             move(dir * 5);
             return;
@@ -1131,6 +1196,7 @@ class App {
             optionApply = nullptr;
             return;
         }
+        if(colourPicking){closeColours(false);return;}
         if(playerSettingsOpen){playerSettingsOpen=false;return;}
         if (clientEditing) {
             clientEditing = false;
@@ -1149,6 +1215,10 @@ class App {
             controlsFocused = false;seekerFocused=false;
             return;
         }
+        if(page==10){playlistID.clear();page=9;selected=std::clamp(playlistRootSelected,0,maxSelection());scroll=0;return;}
+        if(page==7){collectionAlbumID.clear();page=5;selected=std::clamp(collectionTileSelected,0,maxSelection());scroll=std::min(selected,collectionTileScroll);return;}
+        if(page==5&&!libraryID.empty()){libraryID.clear();selected=std::clamp(collectionRootSelected,0,maxSelection());scroll=0;return;}
+        if(page==8||page==6||page==5||page==9||page==0)return;
         if (page == 3 && settingsNavigation.entries) {
             settingsNavigation.entries = false;
             return;
@@ -1175,6 +1245,7 @@ class App {
         }
         if (optionApply) {
             int first = layout().optionFirst(optionIndex);
+        ui.scrollIndicator(1117,170,layout().optionRows()*48-6,int(optionLabels.size()),first,layout().optionRows());
             if (inside(x, y, 170, 170, 940, layout().optionRows() * 48)) {
                 int i = first + (y - 170) / 48;
                 if (i < int(optionValues.size())) {
@@ -1185,6 +1256,7 @@ class App {
             return;
         }
         if (colourPicking) {
+            x-=198;
             for (int i = 0; i < 10; i++)
                 if (inside(x, y, 52 + (i % 5) * 156, 200 + (i / 5) * 54, 144, 44)) {
                     colourSelection = i;
@@ -1215,8 +1287,8 @@ class App {
             return;
         }
         if(playerSettingsOpen){
-            if(inside(x,y,168,118,944,46)){playerSettingsTab=x<630?0:1;playerSettingsRow=-1;return;}
-            if(inside(x,y,170,198,940,(playerSettingsTab?5:8)*43)){playerSettingsRow=(y-198)/43;playerSettingsChange();}return;
+            if(inside(x,y,168,118,944,46))return;
+            if(inside(x,y,170,198,940,(playerSettingsTab?6:8)*43)){playerSettingsRow=(y-198)/43;playerSettingsChange();}return;
         }
         if(canExpandVisualizer()&&visualizerRect().contains(x,y)){visualizerFullscreen=true;return;}
         auto volume=volumeRect();
@@ -1233,16 +1305,23 @@ class App {
                 if(playerButtonRect(fullscreen,layout().extraHeight(),row,col).contains(x,y)){
                     controlsFocused=true;playerFocus()={row,col};syncPlayerFocus();playerAction();return;
                 }
+        if(!fullscreen&&!controlsFocused&&!optionApply&&(page==7||page==8||page==10)&&inside(x,y,28,155,828,layout().panelHeight())){
+            if(y>=albumTrackTop()){int row=scroll+(y-albumTrackTop())/46;if(row<=maxSelection()){selected=row;albumPageAction();}}return;
+        }
+        if(!fullscreen&&!controlsFocused&&!optionApply&&(page==5||page==6||page==9)&&inside(x,y,28,182,828,layout().panelHeight()-27)){
+            if(collectionGrid()){int first=collectionFirst();int col=(x-44)/202,row=(y-190)/albumTileHeight();if(x<44||y<190||col>3)return;selected=first+row*4+col;if(selected<=maxSelection())collectionAction();}
+            else {int first=scroll;selected=first+(y-190)/48;if(y>=190&&selected<=maxSelection())collectionAction();}return;
+        }
         if(!fullscreen&&artworkVisible()&&inside(x,y,layout().compactArtX(),182,layout().compactArtDesignSize(),layout().artSize(false))){toggleFullscreen();return;}
         if(fullscreen)return;
-        if(inside(x,y,28,90,462,54)){
-            int tab=(x-28)/154;const int pages[]={0,1,3};if(tab<3)changePage(pages[tab]);seekerFocused=false;return;
+        if(inside(x,y,28,90,1224,54)){
+            int tab=(x-28)/164;auto tabs=mainTabs();if(tab<int(tabs.size()))selectTab(tabs[tab].second);seekerFocused=false;return;
         }
         if (page == 3) {
             const int row = (y - 182) / 48;
             if (y < 182 || row >= layout().rows()) return;
-            if (inside(x,y,28,155,220,layout().panelHeight()) && row < int(settingsNavigation.categories.size())) {
-                settingsNavigation.category = row;
+            if (inside(x,y,28,155,220,layout().panelHeight()) && row+settingsCategoryScroll < int(settingsNavigation.categories.size())) {
+                settingsNavigation.category = row+settingsCategoryScroll;
                 settingsNavigation.entries = true;
                 controlsFocused = seekerFocused = false;
             } else if (inside(x,y,264,155,592,layout().panelHeight())) {
@@ -1271,11 +1350,13 @@ class App {
     }
 
     std::string trackTitle(const Playback &p) const {
+        if(p.track.source.root==RadioRoot&&p.busy)return "Loading station...";
         return !p.details.title.empty() ? p.details.title
                : p.track.name.empty()   ? "Nothing playing"
                                         : p.track.name;
     }
     std::string trackAlbum(const Playback &p) const {
+        if(p.track.source.root==RadioRoot)return p.track.name;
         return !p.details.album.empty() ? p.details.album
                : p.track.path.empty()   ? "Local + USB + SMB + audio CD"
                                         : filename(parent(p.track.path));
@@ -1305,8 +1386,17 @@ class App {
             bx += w + 8;
         }
     }
+    void drawCompact(const Playback &p){
+        ui.rect(876,155,376,layout().panelHeight(),PANEL);
+        if(artworkVisible())ui.image(artTexture,layout().compactArtX(),182,layout().compactArtDesignSize());
+        ui.marquee(900,artworkVisible()?layout().compactTitleY():190,trackTitle(p),22,TEXT,328,"compact-title");
+        ui.text(900,artworkVisible()?layout().compactTitleY()+34:228,!p.details.artist.empty()?p.details.artist:trackAlbum(p),16,MUTED,328);
+        drawBadges(p,900,artworkVisible()?layout().compactTitleY()+65:265,328,12);
+        drawVisualizer(p);
+    }
     void drawFullscreen(const Playback &p) {
-        if(artworkVisible())ui.image(artTexture,64,140,400);
+        if(settings.fullPlayerCard)ui.roundedRect(64,126,1136,422+layout().extraHeight(),PANEL,16);
+        if(artworkVisible())ui.image(artTexture,settings.fullPlayerCard?84:64,140,settings.fullPlayerCard?380:400);
         int x=playerX(),width=playerWidth();
         ui.text(x,142,"NOW PLAYING"+(p.count>0?"  "+std::to_string(p.index+1)+"/"+std::to_string(p.count):std::string{}),15,MUTED,width);
         ui.marquee(x,180,trackTitle(p),34,TEXT,width,"fullscreen-title");
@@ -1317,6 +1407,7 @@ class App {
 
     }
     void drawVisualizer(const Playback &p){
+        Color ACCENT=settings.visualizerColour=="theme"?nxh::ACCENT:readableAccent(rgbColour(settings.visualizerColour),BG);
         if(!settings.visualizer)return;
         int x=fullscreen?playerX():900,w=fullscreen?playerWidth():328;
         int y=fullscreen?visualizerRect().y:392+layout().extraHeight(),h=fullscreen?visualizerRect().h:22;
@@ -1334,7 +1425,7 @@ class App {
         int y=a.y+12;ui.rect(a.x,y,a.w,5,LINE);
         if(p.duration>0){int offset=int(a.w*std::clamp(position/p.duration,0.,1.));ui.rect(a.x,y,offset,5,ACCENT);ui.rect(a.x+std::clamp(offset,4,a.w-4)-4,y-4,8,13,ACCENT);}
         ui.text(a.x,a.y+30,timeLabel(position),fullscreen?18:14,MUTED);
-        auto duration=p.duration>0?(p.details.durationEstimated?"~":"")+timeLabel(p.duration):"--:--";
+        auto duration=p.track.source.root==RadioRoot?std::string("LIVE"):p.duration>0?(p.details.durationEstimated?"~":"")+timeLabel(p.duration):"--:--";
         ui.rightText(a.x+a.w,a.y+30,duration,fullscreen?18:14,MUTED);
     }
     void drawPlayerButtons(const Playback &p){
@@ -1344,47 +1435,46 @@ class App {
             auto a=playerButtonRect(fullscreen,layout().extraHeight(),row,col);
             bool focus=(fullscreen||controlsFocused)&&playerFocus().row==row&&playerFocus().column==col;
             bool active=(id==4&&settings.shuffle)||(id==5&&settings.repeat);
-            if(focus)ui.roundedRect(a.x-3,a.y-3,a.w+6,a.h+6,ACCENT,14);
-            ui.roundedRect(a.x,a.y,a.w,a.h,id==1?FOCUS:PANEL);
-            ui.transportIcon(a.x+a.w/2,a.y+a.h/2,fullscreen?(id==1?52:44):(id==1?42:34),id==6?10:id==7?11:id,p.playing&&!p.paused,active||id==1?ACCENT:TEXT,settings.repeat==2);
-            if(active)ui.rect(a.x+a.w/2-10,a.y+a.h-5,20,3,ACCENT);
+            ui.roundedRect(a.x,a.y,a.w,a.h,focus?FOCUS:PANEL);
+            ui.transportIcon(a.x+a.w/2,a.y+a.h/2,fullscreen?(id==1?52:44):(id==1?42:34),id==6?10:id==7?11:id,p.playing&&!p.paused,active?ACCENT:TEXT,settings.repeat==2);
+            
         }
         auto a=volumeRect();bool focus=(controlsFocused||fullscreen)&&playerFocus().volume(fullscreen);
-        if(focus){ui.roundedRect(a.x-4,a.y-4,a.w+8,a.h+8,ACCENT,10);ui.roundedRect(a.x-2,a.y-2,a.w+4,a.h+4,PANEL,8);}
+        if(focus)ui.roundedRect(a.x-4,a.y-4,a.w+8,a.h+8,FOCUS,10);
         ui.text(a.x,a.y,"Volume",14,focus?ACCENT:MUTED);
         ui.rect(a.x+65,a.y+10,a.w-127,4,LINE);ui.rect(a.x+65,a.y+10,(a.w-127)*settings.volume/100,4,ACCENT);
         ui.text(a.x+a.w-54,a.y,std::to_string(settings.volume)+"%",14,focus?ACCENT:MUTED,54);
     }
     void drawColours() {
-        ui.rect(28, 155, 828, layout().panelHeight(), PANEL);
-        ui.text(46, 160, "ACCENT COLOUR", 15, MUTED);
+        ui.rect(0,0,1280,layout().height(),{0,0,0,80});
+        ui.roundedRect(198+(28), 155, 828, layout().panelHeight(), {PANEL.r,PANEL.g,PANEL.b,250},18);
+        ui.text(198+(46), 160, colourTarget=="visualizer_colour"?"CUSTOM VISUALIZER COLOUR":"CUSTOM ACCENT COLOUR", 15, MUTED);
         for (int i = 0; i < 10; i++) {
             int x = 52 + (i % 5) * 156, y = 200 + (i / 5) * 54;
             Color c = rgbColour(accentPresets[i].hex);
-            ui.rect(x, y, 144, 44, colourSelection == i ? FOCUS : BG);
-            ui.rect(x + 8, y + 9, 25, 25, c);
-            ui.text(x + 42, y + 12, accentPresets[i].name, 17, TEXT, 96);
-            if (colourSelection == i)
-                ui.rect(x, y + 42, 144, 2, ACCENT);
+            ui.rect(198+(x), y, 144, 44, colourSelection == i ? FOCUS : BG);
+            ui.rect(198+(x + 8), y + 9, 25, 25, c);
+            ui.text(198+(x + 42), y + 12, accentPresets[i].name, 17, TEXT, 96);
+
         }
-        ui.text(52, 310, "CUSTOM", 14, MUTED);
+        ui.text(198+(52), 310, "CUSTOM", 14, MUTED);
         const char *channels[] = {"Red", "Green", "Blue"};
         Color bars[] = {{239, 68, 68}, {34, 197, 94}, {59, 130, 246}};
         for (int i = 0; i < 3; i++) {
             int y = 326 + i * 47;
             if (colourSelection == 10 + i)
-                ui.rect(44, y - 1, 780, 38, FOCUS);
-            ui.text(52, y + 6, std::string(channels[i]) + "  " + std::to_string(customRGB[i]), 18,
+                ui.rect(198+(44), y - 1, 780, 38, FOCUS);
+            ui.text(198+(52), y + 6, std::string(channels[i]) + "  " + std::to_string(customRGB[i]), 18,
                     TEXT, 145);
-            ui.rect(210, y + 15, 600, 5, LINE);
-            ui.rect(210, y + 15, customRGB[i] * 600 / 255, 5, bars[i]);
-            ui.rect(210 + std::clamp(customRGB[i] * 600 / 255, 5, 595) - 5, y + 8, 10, 20, TEXT);
+            ui.rect(198+(210), y + 15, 600, 5, LINE);
+            ui.rect(198+(210), y + 15, customRGB[i] * 600 / 255, 5, bars[i]);
+            ui.rect(198+210+std::clamp(customRGB[i]*600/255,5,595)-5,y+8,10,20,TEXT);
         }
-        ui.rect(52, 476, 760, 38, colourSelection == 13 ? FOCUS : BG);
-        ui.rect(64, 482, 24, 24, rgbColour(colourHex(customRGB)));
-        ui.text(103, 483, "Custom hex  " + colourHex(customRGB), 18, TEXT, 690);
-        ui.button(52, 531, 360, 44, "Save colour", colourSelection == 14);
-        ui.button(432, 531, 380, 44, "Cancel", colourSelection == 15);
+        ui.rect(198+(52), 476, 760, 38, colourSelection == 13 ? FOCUS : BG);
+        ui.rect(198+(64), 482, 24, 24, rgbColour(colourHex(customRGB)));
+        ui.text(198+(103), 483, "Custom hex  " + colourHex(customRGB), 18, TEXT, 690);
+        ui.button(198+(52), 531, 360, 44, "Save colour", colourSelection == 14);
+        ui.button(198+(432), 531, 380, 44, "Cancel", colourSelection == 15);
     }
     void drawControls(const Playback &p,const std::string &message){
         if(!colourPicking){drawSeek(p);if(!listening)drawPlayerButtons(p);}
@@ -1392,12 +1482,12 @@ class App {
         if(!message.empty())ui.text(fullscreen?30:600,fullscreen?90:64,message,13,ACCENT,fullscreen?1210:620);
         if(listening&&settings.listeningHideFooter)return;
         ui.rect(0,layout().footerY(),1280,layout().footerHeight(),FOOTER);
-        int x=28,y=layout().footerY()+8;
-        auto hint=[&](const char *button,const std::string &action){x=ui.padHint(x,y,button,action);};
-        if(listening){hint("Options","Play/Pause");hint("L1","");hint("R1","Track");hint("L2","");hint("R2","Seek 5s");hint("L3","Exit");return;}
-        if(optionApply){hint("Dpad","Navigate");hint("Cross","Select");hint("Circle","Back");return;}
-        if(playerSettingsOpen){hint("L1","");hint("R1","Tabs");hint("Dpad","Adjust");hint("Cross","Choose");hint("Circle","Close");return;}
-        if(colourPicking){hint("Dpad","Colour");hint("Cross","Choose");hint("Circle","Cancel");return;}
+        int y=layout().footerY()+8;std::vector<std::pair<std::string,std::string>> hints;auto flush=[&]{ui.centeredHints(y,hints);};
+        auto hint=[&](const char *button,const std::string &action){hints.emplace_back(button,action);};
+        if(listening){hint("Options","Play/Pause");hint("L1","");hint("R1","Track");hint("L2","");hint("R2","Seek 5s");hint("L3","Exit");flush();return;}
+        if(optionApply){hint("Dpad","Navigate");hint("Cross","Select");hint("Circle","Back");flush();return;}
+        if(playerSettingsOpen&&!colourPicking){hint("L1","");hint("R1","Tabs");hint("Dpad","Adjust");hint("Cross","Choose");hint("Circle","Close");flush();return;}
+        if(colourPicking){hint("Dpad","Colour");hint("Cross","Choose");hint("Circle","Cancel");flush();return;}
         if(fullscreen||controlsFocused){
             const char *labels[]={"Previous","Play/Pause","Next","Stop","Shuffle","Repeat","EQ / Visualizer","Fullscreen"};
             auto &focus=playerFocus();int id=focus.action(fullscreen);
@@ -1405,10 +1495,11 @@ class App {
             if(fullscreen&&fullFocus.row==-1)hint("Cross","Expand visualizer");
             else if(id>=0)hint("Cross",labels[id]);
             hint("Circle",fullscreen?"Close":"Browse");
-        }else{hint("Dpad","Navigate");hint("Cross",page==3?(settingsNavigation.entries?"Change":"Select"):editing?"Edit":"Open");hint("Circle",page==3&&settingsNavigation.entries?"Categories":"Back");if(page==0)hint("Triangle","Edit source");}
+        }else{hint("Dpad","Navigate");hint("Cross",page==3?(settingsNavigation.entries?"Change":"Select"):editing?"Edit":"Open");hint("Circle",page==3&&settingsNavigation.entries?"Categories":"Back");if(page==0)hint("Triangle","Edit source");if(page==1)hint("Triangle","Track / album actions");if(page==5||page==6||page==9)hint("Triangle","Manage");if(page==7||page==8||page==10)hint("Triangle","Album actions");}
         if(!fullscreen){hint("Touchpad","Player");hint("L1","");hint("R1","Tabs");hint("R3","Fullscreen");}
         hint("Options","Play/Pause");
         if(fullscreen){hint("L1","");hint("R1","Track");hint("L2","");hint("R2","Seek 5s");hint("L3","Listening");}
+        flush();
     }
 
   public:
@@ -1416,11 +1507,13 @@ class App {
         std::string settingsFile = ConfigPath)
         : ui(u), renderer(r), player(p), settings(std::move(s)),
           settingsPath(std::move(settingsFile)), status(std::move(error)) {
+        collection=std::make_unique<CollectionStore>(parent(settingsPath));catalog=collection->snapshot();
         source = {false, {}, settings.musicRoot};
         page = status.empty() ? 0 : 3;
-        setAppearance(settings.theme, settings.accent);
+        setAppearance(settings.theme, settings.accent,settings.menuOpacity,settings.look);
     }
     ~App() {
+        if(tileWork.valid())tileWork.get();
         probeCancel = true;
         scanner.cancel();
         disconnectTarget();
@@ -1430,6 +1523,7 @@ class App {
         stopStorageDetection();
         for (auto &retired : retiringRemotes)
             retired.wait();
+        for(auto &entry:albumTextures)if(entry.second.second)ui.releaseCover(entry.second.second);
         if (artTexture)
             ui.releaseCover(artTexture);
     }
@@ -1437,7 +1531,6 @@ class App {
         return running;
     }
     void displayChanged() {
-        screenPointerActive = false;
         // Cancel only in-progress pointer gestures; preserve music, pages and focus.
         scrubbing = mouseScrub = mouseColourDrag = false;
         colourDrag = -1;
@@ -1452,8 +1545,6 @@ class App {
             padUpdate(&pad);
         auto down = injected ? injectedDown : padGetButtonsDown(&pad),
              held = injected ? injectedHeld : padGetButtons(&pad);
-        if (!injected && (down || held))
-            remoteKeyboard.cancel();
         if (dialogInput(down, held, injected))
             return;
         if (targetView) {
@@ -1564,6 +1655,8 @@ class App {
             return;
         }
         if(visualizerFullscreen){
+            int direction=(held&HidNpadButton_Left)?-1:(held&HidNpadButton_Right)?1:0;
+            if(horizontalRepeat.fire(direction,down&(HidNpadButton_Left|HidNpadButton_Right),SDL_GetTicks64()))cycleVisualizer(direction);
             if(down&HidNpadButton_B){visualizerFullscreen=false;return;}
             if(down&HidNpadButton_Plus)player.pause();
             if(down&HidNpadButton_L)player.previous();if(down&HidNpadButton_R)player.next();
@@ -1573,8 +1666,8 @@ class App {
         if(fullscreen&&!playerSettingsOpen&&!colourPicking&&!optionApply&&(down&HidNpadButton_StickL)){
             setListening(true);listeningBlocked=held|down;return;
         }
-        if(playerSettingsOpen&&(down&(HidNpadButton_L|HidNpadButton_R))){
-            optionApply=nullptr;playerSettingsTab=1-playerSettingsTab;playerSettingsRow=-1;return;
+        if(playerSettingsOpen&&!colourPicking&&(down&(HidNpadButton_L|HidNpadButton_R))){
+            optionApply=nullptr;playerSettingsTab=1-playerSettingsTab;playerSettingsRow=0;return;
         }
         if (down & HidNpadButton_Plus)
             player.pause();
@@ -1587,11 +1680,11 @@ class App {
 
         if (!fullscreen && !colourPicking && !optionApply && (down & HidNpadButton_L)) {
             fullscreen = false;
-            changePage(page==0?3:page==3?1:0);
+            switchTab(-1);
         }
         if (!fullscreen && !colourPicking && !optionApply && (down & HidNpadButton_R)) {
             fullscreen = false;
-            changePage(page==0?1:page==1?3:0);
+            switchTab(1);
         }
         bool up = held & (HidNpadButton_Up | HidNpadButton_StickLUp),
              dn = held & (HidNpadButton_Down | HidNpadButton_StickLDown);
@@ -1616,6 +1709,9 @@ class App {
             controlsFocused=!controlsFocused;syncPlayerFocus();
         }
         if (!colourPicking && (down & HidNpadButton_X)) {
+            if(!fullscreen&&!controlsFocused&&(page==7||page==8||page==10)){albumActions();return;}
+            if(!fullscreen&&!controlsFocused&&(page==5||page==6||page==9)){collectionManage();return;}
+            if(!fullscreen&&!controlsFocused&&page==1&&!editing){fileActions();return;}
             if (!fullscreen && page == 4 && !clientEditing) {
                 beginClientEdit(selected < int(settings.remoteClients.size()) ? selected : -1);
                 return;
@@ -1648,8 +1744,6 @@ class App {
                            e.type == SDL_FINGERMOTION || e.type == SDL_MOUSEBUTTONDOWN ||
                            e.type == SDL_MOUSEBUTTONUP || e.type == SDL_MOUSEMOTION;
             if (pointer) {
-                if (!injected)
-                    remoteKeyboard.cancel();
                 if (sleeping) {
                     wake();
                     wakeGesture = e.type == SDL_FINGERDOWN || e.type == SDL_MOUSEBUTTONDOWN;
@@ -1729,8 +1823,15 @@ class App {
             }
         }
     }
+    Uint64 storagePollAt=0;std::vector<StorageDevice> cachedDevices;
     void update() {
-        auto devices=detectedStorageDevices();
+        if(collection&&SDL_GetTicks64()-catalogAt>500){catalogAt=SDL_GetTicks64();refreshCatalog();}
+        if(!storagePollAt||SDL_GetTicks64()-storagePollAt>=500){cachedDevices=detectedStorageDevices();storagePollAt=SDL_GetTicks64();}
+        auto devices=cachedDevices;
+        bool connected=std::any_of(devices.begin(),devices.end(),[](const auto &device){return device.id==-2;});
+        if(connected!=discConnected){discConnected=connected;lastPublish=0;discSignature.clear();albumPages.invalidate("disc");discProbeAt=0;if(!connected&&page==8)selectTab(0);}
+        devices.erase(std::remove_if(devices.begin(),devices.end(),[](const auto &device){return device.id==-2;}),devices.end());
+        updateDiscPage();
         if(devices!=storageDevices_){
             int focused=selected<int(storageDevices_.size())?storageDevices_[selected].id:0;
             int shareOffset=selected-int(storageDevices_.size());
@@ -1768,8 +1869,7 @@ class App {
                 connectTarget(targetView->switchClient);
         }
         updateConnections();
-        ui.recordScreen(settings.remoteEnabled && screenSessions.active(SDL_GetTicks64()) &&
-                        SDL_GetTicks64() - lastScreenPublish >= 50);
+        ui.recordScreen(false);
         updateRemote();
         sleeping = !listening && !visualizerFullscreen && settings.screensaverSeconds > 0 &&
                    SDL_GetTicks64() - lastInteraction >= Uint64(settings.screensaverSeconds) * 1000;
@@ -1779,6 +1879,7 @@ class App {
             if (result.kind == 1) {
                 status = result.ok ? "SMB connected: folder is readable." : result.error;
             } else {
+                int activeSelected=selected,activeScroll=scroll;
                 loading = false;
                 entries = std::move(result.entries);
                 source = result.source;
@@ -1795,15 +1896,21 @@ class App {
                     scroll =
                         std::clamp(scroll, std::max(0, selected - layout().rows() + 1), selected);
                 }
+                if(page!=1){tabPositions[1]={selected,scroll};selected=activeSelected;scroll=activeScroll;}
                 status = result.ok
                              ? (entries.empty() ? "No supported music files or folders here." : "")
                              : result.error;
             }
         }
         auto p = player.snapshot();
-        auto key = p.track.source.share.server + "/" + p.track.source.share.share + "/" +
+        std::string metadataKey=p.track.source.share.server+"/"+p.track.source.root+"/"+p.track.path;
+        if(p.playing&&!p.busy&&!p.track.path.empty()&&metadataKey!=tagKey){tagKey=metadataKey;if(lower(p.track.path).size()>=5&&lower(p.track.path).substr(p.track.path.size()-5)==".flac")tags.request(p.track.source,p.track.path,3);else tags.cancel();}
+        LoadResult tagResult;if(tags.poll(tagResult)&&tagResult.ok)player.metadata(tagResult.details,tagResult.source,tagResult.path);
+        Source artworkSource=p.track.source;int stationArtRevision=0;if(p.track.source.root==RadioRoot)for(auto &station:catalog["stations"])if(station["url"]==p.track.path){artworkSource.share.folder=station.value("logo",std::string{});artworkSource.share.domain=collection->imagePath("station",station["id"]);stationArtRevision=station.value("image_revision",0);break;}
+        auto key = std::to_string(stationArtRevision)+artworkSource.share.folder+"/"+p.track.source.share.server + "/" + p.track.source.share.share + "/" +
                    p.track.source.root + "/" + p.track.path +
                    (settings.preferFolderArt ? "/folder-first" : "/embedded-first");
+        if(auto album=playbackAlbum(p))key+="/album-art-"+std::to_string(album->value("cover_revision",0));
         if (!settings.showArtwork) {
             if (artTexture) {
                 ui.releaseCover(artTexture);
@@ -1816,7 +1923,7 @@ class App {
                     remote->artwork({});
             }
         }
-        if (settings.showArtwork && !p.track.path.empty() && key != artKey) {
+        if (settings.showArtwork && !p.track.path.empty() && key != artKey && (p.track.source.root==RadioRoot||!p.busy)) {
             artKey = key;
             ui.resetMarquees();
             scrubbing = false;
@@ -1829,14 +1936,15 @@ class App {
             if (remote)
                 remote->artwork({});
             playbackTrace("main.artwork.request");
-            art.request(p.track.source, p.track.path, 2, settings.preferFolderArt);
+            art.request(artworkSource, p.track.path, 2, settings.preferFolderArt);
         }
         if (art.poll(result) && settings.showArtwork) {
+            if(result.cover.empty())if(auto album=playbackAlbum(p)){std::ifstream f(collection->coverPath(album->at("id")),std::ios::binary);result.cover.assign(std::istreambuf_iterator<char>(f),{});}
             playbackTrace("main.artwork.decode.begin", result.cover.size());
             if (artTexture)
                 ui.releaseCover(artTexture);
             remoteArt.clear();
-            artTexture = ui.cover(result.cover, settings.remoteEnabled ? &remoteArt : nullptr);
+            artTexture = result.surface?ui.coverPrepared(result.surface.get(),result.encoded,settings.remoteEnabled?&remoteArt:nullptr):ui.cover(result.cover, settings.remoteEnabled ? &remoteArt : nullptr);
             playbackTrace("main.artwork.decode.end", remoteArt.size());
             if (remote)
                 remote->artwork(remoteArt);
@@ -1845,7 +1953,8 @@ class App {
         }
     }
     void draw(){draw(player.snapshot());}
-    void draw(const Playback &p) {
+    void draw(const Playback &incoming) {
+        auto p=libraryPlayback(incoming);
         frameDiagnostics.view=visualizerFullscreen?"visualizer":fullscreen?"fullscreen":"menu";
         if (connectionOpen) {
             drawConnection();
@@ -1860,7 +1969,8 @@ class App {
             finishFrame(false);
             return;
         }
-        setAppearance(settings.theme, colourPicking ? colourHex(customRGB) : settings.accent);
+        setAppearance(settings.theme, colourPicking&&colourTarget=="accent_colour" ? colourHex(customRGB) : settings.accent,settings.menuOpacity,settings.look);
+        ui.setBackgroundAnimation(settings.animatedBackground?settings.backgroundAnimation:0);ui.setBackgroundSpeed(settings.backgroundSpeed);
         ui.begin();
         if (sleeping) {
             ui.rect(0, 0, 1280, layout().height(), {0, 0, 0});
@@ -1880,31 +1990,33 @@ class App {
             if(visualizerFullscreen)ui.paintBackground();
             drawLocalVisualizer(p);
             drawPlayerSettings();
+            if(colourPicking)drawColours();
             drawOptions();
             finishFrame();
             return;
         }
-        const char *tabs[] = {"Sources", "Library", "Settings"};
-        const int tabPages[]={0,1,3};
-        for (int i = 0; i < 3; i++)
-            ui.button(28 + i * 154, 90, 142, 48, tabs[i], page == tabPages[i]);
+        auto tabs=mainTabs();for(int i=0;i<int(tabs.size());i++)ui.button(28+i*164,90,152,48,tabs[i].first,mainTab()==tabs[i].second);
+        if(page==7||page==8||page==10){drawAlbumPage(p);drawCompact(p);drawControls(p,p.error.empty()?status:p.error);drawOptions();finishFrame();return;}
 
+        if(page==5||page==6||page==9){drawCollections();drawCompact(p);drawControls(p,p.error.empty()?status:p.error);drawOptions();finishFrame();return;}
         if (page == 3) {
             ui.rect(28, 155, 220, layout().panelHeight(), PANEL);
             ui.rect(264, 155, 592, layout().panelHeight(), PANEL);
             ui.text(46, 160, "CATEGORIES", 15, MUTED, 184);
-            for (int i = 0; i < int(settingsNavigation.categories.size()); ++i) {
-                const int y = 182 + i * 48;
+            int categoryRows=layout().rows(),categoryCount=int(settingsNavigation.categories.size());
+            settingsCategoryScroll=std::clamp(settingsCategoryScroll,std::max(0,settingsNavigation.category-categoryRows+1),settingsNavigation.category);
+            ui.scrollIndicator(241,182,categoryRows*48-4,categoryCount,settingsCategoryScroll,categoryRows);
+            for (int i = settingsCategoryScroll; i < std::min(categoryCount,settingsCategoryScroll+categoryRows); ++i) {
+                const int y = 182 + (i-settingsCategoryScroll) * 48;
                 const bool current = i == settingsNavigation.category;
                 const bool focus = current && !settingsNavigation.entries && !controlsFocused;
-                UI::Clip clip(ui, 40, y, 196, 44);
+                UI::Clip clip(ui, 37, y-3, 202, 50);
                 if (current) ui.rect(40, y, 196, 44, FOCUS);
-                if (focus) ui.rect(40, y, 4, 44, ACCENT);
+
                 ui.text(52, y + 9, settingsNavigation.categories[i].name, 20,
                         focus ? ACCENT : TEXT, 172);
             }
         } else ui.rect(28, 155, 828, layout().panelHeight(), PANEL);
-        ui.rect(876, 155, 376, layout().panelHeight(), PANEL);
         std::vector<std::string> names, values;
         std::string heading;
         if (page == 4) {
@@ -1949,13 +2061,11 @@ class App {
                           ? (source.share.name.empty() ? source.share.server : source.share.name)
                           : "LOCAL / USB";
             heading = sourceSelected ? heading + "  /  " + (folder.empty() ? "Music" : folder)
-                                     : "SELECT A MUSIC SOURCE";
-            for (auto &e : entries) {
-                names.push_back(e.name);
-                values.push_back(e.directory ? "Folder" : "Track");
-            }
+                                     : "SELECT A FILE SOURCE";
+            for(auto &a:catalog["albums"])if(a["id"]==albumContextID)heading=a.value("title",std::string{})+" / "+a.value("artist",std::string{});
+
         } else if (page == 0) {
-            heading = "MUSIC SOURCES";
+            heading = "FILES";
             for(auto &device:storageDevices_){names.push_back(device.name);values.push_back(device.id==-2?"USB audio CD / MusicBrainz":storageFolder(settings,device));}
             for (auto &s : settings.shares) {
                 names.push_back(s.name.empty() ? s.server : s.name);
@@ -1973,43 +2083,44 @@ class App {
             }
         }
         const bool settingsPage = page == 3;
+        const auto rowFields=settingsPage?settingFields():nlohmann::json::array();
         const int listX = settingsPage ? 280 : 40, listW = settingsPage ? 560 : 804;
         const int textX = listX + 17;
         const int rowScroll = settingsPage ? settingsNavigation.current().scroll : scroll;
         const int rowSelected = settingsPage ? settingsNavigation.current().selected : selected;
         const bool listFocused = !controlsFocused && (!settingsPage || settingsNavigation.entries);
         ui.text(settingsPage ? 282 : 46, 160, heading, 15, MUTED, settingsPage ? 550 : 790);
+        const int rowCount=page==1?int(entries.size()):int(names.size());
         for (int row = 0; row < layout().rows(); row++) {
             int index = rowScroll + row;
-            if (index >= int(names.size()))
+            if (index >= rowCount)
                 break;
             int y = 182 + row * 48;
-            UI::Clip clip(ui, listX, y, listW, 44);
+            UI::Clip clip(ui, listX-3, y-3, listW+6, 50);
             if (listFocused && rowSelected == index) {
                 ui.rect(listX, y, listW, 44, FOCUS);
-                ui.rect(listX, y, 4, 44, ACCENT);
+
             }
             bool active = listFocused && rowSelected == index;
-            bool hasValue = index < int(values.size()) && !values[index].empty();
+            const auto &rowName=page==1?entries[index].name:names[index];
+            std::string rowValue=page==1?(entries[index].directory?"Folder":"Track"):index<int(values.size())?values[index]:std::string{};
+            bool hasValue=!rowValue.empty();
             // Every tab uses the entire row; secondary details sit below its title.
-            ui.text(textX, y + (hasValue ? 2 : 9), names[index], hasValue ? 20 : 21,
-                    active ? ACCENT : TEXT, settingsPage ? 526 : hasValue && page == 1 ? 640 : 770);
+            ui.text(textX, y + (hasValue ? 2 : 9), rowName, hasValue ? 20 : 21,
+                    (settingsPage&&settingDisabled(rowFields[settingsNavigation.current().fields[index]]))?Color{MUTED.r,MUTED.g,MUTED.b,130}:active ? ACCENT : TEXT, settingsPage ? 526 : hasValue && page == 1 ? 640 : 770);
             if (hasValue) {
                 if (page == 1 && !editing)
-                    ui.text(713, y + 11, values[index], 17, MUTED, 110);
+                    ui.rightText(listX+listW-17, y + 11, rowValue, 17, MUTED);
                 else
-                    ui.text(textX, y + 25, values[index], 14, MUTED, settingsPage ? 526 : 770);
+                    ui.text(textX, y + 25, rowValue, 14, MUTED, settingsPage ? 526 : 770);
             }
         }
+        ui.scrollIndicator(settingsPage?846:849,182,layout().rows()*48-4,rowCount,rowScroll,layout().rows());
         if (loading)
             ui.text(57, 240, "Loading...", 25, ACCENT);
-        else if (names.empty())
-            ui.text(57, 240, "Open Sources to select your music.", 23, MUTED, 750);
-        if(artworkVisible())ui.image(artTexture,layout().compactArtX(),182,layout().compactArtDesignSize());
-        ui.marquee(900,artworkVisible()?layout().compactTitleY():190,trackTitle(p),22,TEXT,328,"compact-title");
-        ui.text(900,artworkVisible()?layout().compactTitleY()+34:228,!p.details.artist.empty()?p.details.artist:trackAlbum(p),16,MUTED,328);
-        drawBadges(p,900,artworkVisible()?layout().compactTitleY()+65:265,328,12);
-        drawVisualizer(p);
+        else if (rowCount==0)
+            ui.text(57, 240, "Open Files to select your music.", 23, MUTED, 750);
+        drawCompact(p);
         if (colourPicking)
             drawColours();
         auto message = !p.error.empty() ? p.error : status;

@@ -28,12 +28,13 @@ int main(){
     char directoryTemplate[]="/tmp/prospero-player-app-XXXXXX";
     const char *directory=mkdtemp(directoryTemplate);assert(directory);
     const std::string root=directory;
+    const std::string configRoot=root+"-settings";fs::create_directory(configRoot);
     // A small real PCM WAV exercises file selection and the asynchronous browser/player path.
     {std::ofstream wav(root+"/test.wav",std::ios::binary);auto le=[&](unsigned value,int count){for(int i=0;i<count;i++)wav.put(char(value>>(8*i)));};
      wav.write("RIFF",4);le(36+176400,4);wav.write("WAVEfmt ",8);le(16,4);le(1,2);le(2,2);le(44100,4);le(176400,4);le(4,2);le(16,2);wav.write("data",4);le(176400,4);std::string silence(176400,'\0');wav.write(silence.data(),silence.size());}
     for(int i=1;i<=40;i++)fs::copy_file(root+"/test.wav",root+"/Track "+std::to_string(i)+" - browser redraw.wav");
     for(bool automatic:{false,true}){
-        UI ui(renderer,font.data(),font.size());ui.setDocked(true);Settings settings;settings.musicRoot=root;settings.remoteEnabled=false;settings.autoFullscreen=automatic;
+        UI ui(renderer,font.data(),font.size());ui.setDocked(true);Settings settings;settings.gaplessPlayback=false;settings.animatedBackground=false;settings.musicRoot=root;settings.remoteEnabled=false;settings.autoFullscreen=automatic;
         ui.recordScreen(true);ui.begin();ui.badge(100,100,200,38,"44.1 kHz",16);
         auto metadata=ui.screenFrame();bool centered=false;
         for(auto &op:metadata["ops"])if(op.is_array()&&op.size()>3&&op[0]==1&&op[3]=="44.1 kHz"){
@@ -43,7 +44,7 @@ int main(){
         for(int size:{14,18})for(auto value:{"--:--","1:23","~12:34","123:45:56"}){
             ui.begin();ui.rightText(1228,100,value,size,MUTED);durationEdge(ui,value,1228,size);
         }
-        Player player(settings);assert(player.valid());App app(ui,renderer,player,settings,"",root+"/config.json");PadState pad{};
+        Player player(settings);assert(player.valid());App app(ui,renderer,player,settings,"",configRoot+"/config.json");PadState pad{};
         auto press=[&](u64 button){app.input(pad,button,button,true);app.input(pad,0,0,true);};
         auto draw=[&]{ui.recordScreen(true);app.draw();};
         if(!automatic&&std::getenv("PROSPERO_PREVIEW_DIR")){
@@ -60,10 +61,13 @@ int main(){
             }
             press(HidNpadButton_B);
         }
-        draw();assert(hasText(ui,"Sources"));durationEdge(ui,"--:--",1228,14);leftTitle(ui,900);
+        draw();assert(hasText(ui,"Files"));durationEdge(ui,"--:--",1228,14);leftTitle(ui,900);
         // Settings: categories require Cross, Circle returns to the same category.
         press(HidNpadButton_L);draw();
         assert(hasText(ui,"CATEGORIES")&&hasText(ui,"Accent colour")&&!hasText(ui,"Appearance /"));
+        // The category outline must continue across each straight edge, outside the fill.
+        {int ow=0,oh=0;SDL_GetRendererOutputSize(renderer,&ow,&oh);SDL_Rect pixel{ui.layout().x(138)*ow/ui.layout().width(),181*oh/ui.layout().height(),1,1};Uint32 value=0;assert(!SDL_RenderReadPixels(renderer,&pixel,SDL_PIXELFORMAT_ARGB8888,&value,4));assert((value&0xffffff)==(Uint32(ACCENT.r)<<16|Uint32(ACCENT.g)<<8|ACCENT.b));}
+
         if(!automatic)if(const char *path=SDL_getenv("PROSPERO_TEST_SETTINGS_IMAGE")){
             auto *surface=SDL_CreateRGBSurfaceWithFormat(0,1920,1080,32,SDL_PIXELFORMAT_RGBA32);
             assert(SDL_RenderReadPixels(renderer,nullptr,surface->format->format,surface->pixels,surface->pitch)==0);
@@ -73,7 +77,7 @@ int main(){
         press(HidNpadButton_A);draw();assert(hasText(ui,"Categories"));
         press(HidNpadButton_A);draw();assert(hasText(ui,"Dark")&&hasText(ui,"OLED"));
         press(HidNpadButton_B);draw();assert(!hasText(ui,"OLED")); // Choice dismissal stays in entries.
-        press(HidNpadButton_Down); // Accent colour.
+        press(HidNpadButton_Down);press(HidNpadButton_Down); // Accent colour, below Look.
         press(HidNpadButton_B);draw();assert(hasText(ui,"Select"));
         press(HidNpadButton_Down);draw();assert(hasText(ui,"Show artwork")&&!hasText(ui,"Accent colour"));
         press(HidNpadButton_A);draw();const int artworkOn=textCount(ui,"On");
@@ -82,23 +86,23 @@ int main(){
         press(HidNpadButton_Minus);draw();assert(hasText(ui,"Browse"));
         press(HidNpadButton_B);draw();assert(hasText(ui,"Categories")); // Mini player preserves entries.
         press(HidNpadButton_B);press(HidNpadButton_Up);press(HidNpadButton_A);
-        press(HidNpadButton_A);draw();assert(hasText(ui,"Save colour")); // Appearance remembers Accent colour.
+        press(HidNpadButton_A);for(int i=0;i<4;i++)press(HidNpadButton_Down);press(HidNpadButton_A);draw();assert(hasText(ui,"Save colour")); // Appearance remembers Accent colour.
         press(HidNpadButton_B);press(HidNpadButton_B);press(HidNpadButton_R);draw();
-        assert(hasText(ui,"MUSIC SOURCES"));
-        press(HidNpadButton_StickR);draw();assert(!hasText(ui,"Sources")&&hasText(ui,"Play/Pause")&&!hasText(ui,"Seek 10s"));
-        durationEdge(ui,"--:--",1216,18);leftTitle(ui,560);
+        assert(hasText(ui,"FILES"));
+        press(HidNpadButton_StickR);draw();assert(!hasText(ui,"Files")&&hasText(ui,"Play/Pause")&&!hasText(ui,"Seek 10s"));
+        durationEdge(ui,"--:--",1200,18);leftTitle(ui,560);
         auto fullFrame=ui.screenFrame();for(auto &op:fullFrame["ops"])if(op.is_array()&&op.size()>4&&op[0]==0)assert(!(op[1]==ui.layout().x(544)&&op[2]==138));
         assert(textCount(ui,"Play/Pause")==2); // Focused Cross action plus Options shortcut.
         assert(!hasText(ui,"Cross")&&!hasText(ui,"Circle")&&!hasText(ui,"Select a track"));
         assert(!hasText(ui,"Previous")); // No labels underneath fullscreen buttons.
-        press(HidNpadButton_L);press(HidNpadButton_R);draw();assert(!hasText(ui,"Sources"));
-        press(HidNpadButton_Minus);draw();assert(!hasText(ui,"Sources"));
+        press(HidNpadButton_L);press(HidNpadButton_R);draw();assert(!hasText(ui,"Files"));
+        press(HidNpadButton_Minus);draw();assert(!hasText(ui,"Files"));
         press(HidNpadButton_Up);draw();assert(hasText(ui,"Volume"));
         press(HidNpadButton_Up);draw();assert(hasText(ui,"Seek 10s"));
         press(HidNpadButton_Down);press(HidNpadButton_Down);draw();assert(hasText(ui,"Next"));
         press(HidNpadButton_Right);press(HidNpadButton_Right);press(HidNpadButton_Right);press(HidNpadButton_A);
-        draw();assert(hasText(ui,"Equalizer")&&hasText(ui,"Visualizer")&&!hasText(ui,"Sources"));
-        press(HidNpadButton_B);draw();assert(!hasText(ui,"Bass 60 Hz")&&!hasText(ui,"Sources"));
+        draw();assert(hasText(ui,"Equalizer")&&hasText(ui,"Visualizer")&&!hasText(ui,"Files"));
+        press(HidNpadButton_B);draw();assert(!hasText(ui,"Bass 60 Hz")&&!hasText(ui,"Files"));
         Source local{false,{},root};player.play({{local,"test.wav","One"},{local,"test.wav","Two"},{local,"test.wav","Three"}},1);
         press(HidNpadButton_L);assert(player.snapshot().index==0);
         press(HidNpadButton_R);assert(player.snapshot().index==1);
@@ -122,22 +126,22 @@ int main(){
         // Exiting Cross must not activate the previously focused Equalizer button.
         assert(!hasText(ui,"Equalizer preset"));
         player.stop();
-        press(HidNpadButton_B);draw();assert(hasText(ui,"Sources"));
-        press(HidNpadButton_R);draw();assert(player.snapshot().index==1);assert(hasText(ui,"SELECT A MUSIC SOURCE"));
-        press(HidNpadButton_L);draw();assert(player.snapshot().index==1&&hasText(ui,"MUSIC SOURCES"));
+        press(HidNpadButton_B);draw();assert(hasText(ui,"Files"));
+        press(HidNpadButton_R);draw();assert(player.snapshot().index==1);assert(hasText(ui,"COLLECTIONS"));
+        press(HidNpadButton_L);draw();assert(player.snapshot().index==1&&hasText(ui,"FILES"));
         press(HidNpadButton_Minus);press(HidNpadButton_Up);draw();assert(hasText(ui,"Seek 10s"));
         press(HidNpadButton_B);draw();assert(hasText(ui,"Open"));
         press(HidNpadButton_A);
         for(int i=0;i<80;i++){app.update();SDL_Delay(5);}
-        press(HidNpadButton_A);draw();assert(hasText(ui,"Sources")!=automatic);
+        press(HidNpadButton_A);draw();assert(hasText(ui,"Files")!=automatic);
         if(automatic)press(HidNpadButton_B);
-        player.next();app.update();draw();assert(hasText(ui,"Sources"));
+        player.next();app.update();draw();assert(hasText(ui,"Files"));
     }
     {
         UI ui(renderer,font.data(),font.size());ui.setDocked(true);
         ui.recordScreen(true);
-        Settings settings;settings.musicRoot=root;settings.remoteEnabled=false;
-        Player player(settings);App app(ui,renderer,player,settings,"",root+"/config.json");PadState pad{};
+        Settings settings;settings.gaplessPlayback=false;settings.animatedBackground=false;settings.musicRoot=root;settings.remoteEnabled=false;
+        Player player(settings);App app(ui,renderer,player,settings,"",configRoot+"/config.json");PadState pad{};
         auto press=[&](u64 button){app.input(pad,button,button,true);app.input(pad,0,0,true);};
         auto draw=[&]{ui.recordScreen(true);app.draw();};
         press(HidNpadButton_A);
@@ -161,9 +165,9 @@ int main(){
     }
     // New local settings share persistent values, while remote frames keep stock bars.
     for(bool docked:{false,true}){
-        UI ui(renderer,font.data(),font.size());ui.setDocked(docked);Settings settings;
+        UI ui(renderer,font.data(),font.size());ui.setDocked(docked);Settings settings;settings.gaplessPlayback=false;settings.animatedBackground=false;
         settings.musicRoot=root;settings.remoteEnabled=false;settings.visualizerStyle=3;
-        Player player(settings);App app(ui,renderer,player,settings,"",root+"/visualizer.json");PadState pad{};
+        Player player(settings);App app(ui,renderer,player,settings,"",configRoot+"/visualizer.json");PadState pad{};
         auto press=[&](u64 b){app.input(pad,b,b,true);app.input(pad,0,0,true);};
         Playback fixture;fixture.playing=true;fixture.count=19;fixture.index=17;fixture.track.path="test.wav";
         fixture.details.title="Visualizer regression";fixture.details.format="FLAC";fixture.details.sampleRate=44100;
@@ -187,18 +191,19 @@ int main(){
         Source local{false,{},root};player.play({{local,"test.wav","One"},{local,"test.wav","Two"},{local,"test.wav","Three"}},1);
         press(HidNpadButton_R);draw();assert(hasText(ui,"Local fullscreen style")||hasText(ui,"Fullscreen style"));assert(player.snapshot().index==1);
         press(HidNpadButton_L);draw();assert(hasText(ui,"Bass 60 Hz")&&player.snapshot().index==1);
-        press(HidNpadButton_R);press(HidNpadButton_A);press(HidNpadButton_Down);press(HidNpadButton_A);
+        press(HidNpadButton_R);press(HidNpadButton_Down);press(HidNpadButton_A);
         draw();assert(hasText(ui,"Spectrum mountains")&&hasText(ui,"Spectrogram")&&!hasText(ui,"Radial spectrum"));
         press(HidNpadButton_Down);press(HidNpadButton_A); // Waveform ribbon -> Spectrogram.
-        std::string error;Settings loaded;assert(loadSettings(root+"/visualizer.json",loaded,error));assert(loaded.visualizerStyle==5);
-        press(HidNpadButton_B);press(HidNpadButton_B);draw();assert(hasText(ui,"Sources"));
+        std::string error;Settings loaded;assert(loadSettings(configRoot+"/visualizer.json",loaded,error));assert(loaded.visualizerStyle==5);for(int i=0;i<4;i++)press(HidNpadButton_Down);press(HidNpadButton_A);draw();assert(hasText(ui,"Theme colour"));press(HidNpadButton_Up);press(HidNpadButton_A);draw();assert(hasText(ui,"CUSTOM VISUALIZER COLOUR")&&hasText(ui,"Save colour"));press(HidNpadButton_B);draw();assert(hasText(ui,"Fullscreen style")||hasText(ui,"Local fullscreen style"));
+        press(HidNpadButton_B);press(HidNpadButton_B);draw();assert(hasText(ui,"Files"));
         auto menuFrame=ui.screenFrame();for(auto &op:menuFrame["ops"])if(op[0]==1&&op[3]=="Equalizer")assert(op[2].get<int>()>140);
         press(HidNpadButton_L);for(int i=0;i<3;i++)press(HidNpadButton_Down);press(HidNpadButton_A);draw();assert(hasText(ui,"Enable equalizer")&&hasText(ui,"Bass 60 Hz"));
         press(HidNpadButton_A);press(HidNpadButton_Down);press(HidNpadButton_A);press(HidNpadButton_Down);press(HidNpadButton_A);
         press(HidNpadButton_Down);press(HidNpadButton_Right);
-        assert(loadSettings(root+"/visualizer.json",loaded,error)&&loaded.eqEnabled&&loaded.eq[0]==4.5f);
+        assert(loadSettings(configRoot+"/visualizer.json",loaded,error)&&loaded.eqEnabled&&loaded.eq[0]==4.5f);
         player.stop();
     }
-    fs::remove_all(root);SDL_DestroyRenderer(renderer);SDL_DestroyWindow(window);TTF_Quit();SDL_Quit();
+    {UI ui(renderer,font.data(),font.size());ui.setDocked(true);Settings settings;settings.remoteEnabled=false;settings.animatedBackground=false;settings.fullPlayerCard=true;settings.exitFullscreenOnStop=true;settings.musicRoot=root;Player player(settings);App app(ui,renderer,player,settings,"",configRoot+"/stop-card.json");PadState pad;auto press=[&](u64 key){app.input(pad,key,key,true);app.input(pad,0,0,true);};press(HidNpadButton_StickR);ui.recordScreen(true);app.draw();bool card=false;auto cardFrame=ui.screenFrame();for(auto &op:cardFrame["ops"])if(op[0]==0&&op[1]==ui.layout().x(64)&&op[2]==126&&op[3]==ui.layout().x(1136))card=true;assert(card);durationEdge(ui,"--:--",1180,18);press(HidNpadButton_Right);press(HidNpadButton_A);ui.recordScreen(true);app.draw();assert(hasText(ui,"Files")&&!hasText(ui,"NOW PLAYING"));}
+    fs::remove_all(configRoot);fs::remove_all(root);SDL_DestroyRenderer(renderer);SDL_DestroyWindow(window);TTF_Quit();SDL_Quit();
     std::cout<<"App integration: Settings category/entry controls and remembered focus; active-playback browser redraw/clip recovery (90 frames); fullscreen shortcuts, Auto Fullscreen and duration alignment passed.\n";
 }

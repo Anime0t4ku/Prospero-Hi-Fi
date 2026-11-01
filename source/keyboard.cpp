@@ -60,7 +60,8 @@ bool prosperoKeyboard(const std::string &title,std::string &value,bool password)
             std::string label=r==4?labels[c]:std::string(1,pages[page][r][c]);
             ui->button(x,246+r*89,w,73,label,r==row&&c==col);
         }
-        ui->text(90,ui->layout().bottom(710),"Cross Type   Square Delete   Triangle Space   L1/R1 Page   Options Done   Circle Cancel",18,MUTED);
+        ui->rect(0,ui->layout().footerY(),1280,ui->layout().footerHeight(),FOOTER);
+        ui->centeredHints(ui->layout().footerY()+8,{{"Cross","Type"},{"Square","Delete"},{"Triangle","Space"},{"L1",""},{"R1","Page"},{"Options","Done"},{"Circle","Cancel"}});
         SDL_RenderPresent(renderer);
 #ifndef __PROSPERO__
         SDL_Delay(16);

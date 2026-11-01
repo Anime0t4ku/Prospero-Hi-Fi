@@ -60,6 +60,7 @@ struct Drive {
         if(!OrbisDiscDrive::Command(pass,cdb,raw.data(),size,5000)){error="Could not read CD table of contents.";return false;}
         return parseDiscTOC(raw.data(),raw.size(),t,error);
     }
+    bool eject(std::string &error){std::lock_guard<std::mutex> lock(io);if(pass<0&&!select(error))return false;OrbisDiscDrive::Command(pass,{0x1e,0,0,0,0,0},nullptr,0,3000);if(!OrbisDiscDrive::Command(pass,{0x1b,0,0,0,2,0},nullptr,0,10000)){error="USB drive did not accept the eject command.";return false;}return true;}
     bool toc(DiscTOC &t,std::string &error){std::lock_guard<std::mutex> lock(io);if(pass<0&&!select(error))return false;return tocUnlocked(t,error);}
     bool read(int lba,int count,unsigned char *out){
         std::lock_guard<std::mutex> lock(io);
@@ -76,6 +77,7 @@ struct Drive {
 struct Drive {
     bool toc(DiscTOC &,std::string &error){error="USB CD access is available in the PS5 build.";return false;}
     bool read(int,int,unsigned char*){return false;}
+    bool eject(std::string &error){error="USB disc eject is available on PS5.";return false;}
 };
 #endif
 std::shared_ptr<Drive> drive;
@@ -132,6 +134,8 @@ bool pathTrack(const std::string &path,std::string &id,int &number) {
     number=(name[5]-'0')*10+name[6]-'0';return number>=1&&number<=99;
 }
 } // namespace
+bool ejectDisc(std::string &error){return getDrive()->eject(error);}
+std::string currentDiscID(){auto drive=getDrive(true);DiscTOC toc;std::string error;return drive->toc(toc,error)?discID(toc):std::string{};}
 bool listDisc(std::vector<Entry> &out,std::string &error) {
     out.clear();
     auto d=getDrive(true);DiscTOC toc;

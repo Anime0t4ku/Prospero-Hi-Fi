@@ -36,7 +36,7 @@ bool audioFile(const std::string &p) {
     if (i == std::string::npos)
         return false;
     auto ext = lower(p.substr(i));
-    return ext == ".flac" || ext == ".mp3" || ext == ".wav" || ext == ".ogg" || ext == ".oga";
+    return ext == ".flac" || ext == ".m4a" || ext == ".mp3" || ext == ".wav" || ext == ".ogg" || ext == ".oga";
 }
 bool safeRelative(const std::string &p) {
     if (p.find('\0') != std::string::npos)
@@ -153,6 +153,9 @@ nlohmann::json settingsDocument(const Settings &s, bool secrets) {
             {"shares", shares},
             {"remote_clients", clients},
             {"theme", s.theme},
+            {"animated_background",s.animatedBackground&&s.backgroundAnimation!=0},
+            {"background_animation",s.animatedBackground?s.backgroundAnimation:0},
+            {"menu_opacity",s.menuOpacity},{"background_speed",s.backgroundSpeed},{"look",s.look},{"visualizer_colour",s.visualizerColour},{"collections_view",s.collectionsView},{"radio_view",s.radioView},{"playlists_view",s.playlistsView},{"full_player_card",s.fullPlayerCard},{"exit_fullscreen_on_stop",s.exitFullscreenOnStop},
             {"accent_colour", s.accent},
             {"show_clock", s.showClock},
             {"clock_24h", s.clock24h},
@@ -191,12 +194,23 @@ nlohmann::json settingFields() {
                         {"choices", choices}});
     };
     add("theme", "Theme", "Appearance", "choice", {"dark", "light", "oled"});
+    add("look","Look","Appearance","choice",{"modern","classic"});rows.back()["choice_labels"]={"Modern","Classic"};
     add("accent_colour", "Accent colour", "Appearance", "colour");
+    add("background_animation", "Background animation", "Appearance", "choice",{0,1,2,3});
+    rows.back()["choice_labels"]={"Off","Ambient drift","Aurora","Gradient waves"};
+    rows.back()["disabled_with_oled"]=true;
+    add("background_speed","Animation speed","Appearance","choice",{25,50,75,100,125,150,200});rows.back()["choice_labels"]={"25%","50%","75%","100%","125%","150%","200%"};rows.back()["disabled_with_oled"]=true;rows.back()["requires_enabled"]="background_animation";
+    add("menu_opacity","Menu opacity","Appearance","choice",{50,55,60,65,70,75,80,85,90,95,100});rows.back()["choice_labels"]={"50%","55%","60%","65%","70%","75%","80%","85%","90%","95%","100%"};
+    add("collections_view","Collections view","Appearance","choice",{"list","grid"});rows.back()["choice_labels"]={"List","Grid"};
+    add("radio_view","Radio stations view","Appearance","choice",{"list","grid"});rows.back()["choice_labels"]={"List","Grid"};
+    add("full_player_card","Full player card","Appearance","bool");
+    add("playlists_view","Playlists view","Appearance","choice",{"list","grid"});rows.back()["choice_labels"]={"List","Grid"};
     add("show_clock", "Show clock", "Appearance", "bool");
-    add("clock_24h", "24-hour clock", "Appearance", "bool");
+    add("clock_24h", "24-hour clock", "Appearance", "bool");rows.back()["requires_enabled"]="show_clock";
     add("show_artwork", "Show artwork", "Artwork", "bool");
     add("hide_missing_art", "Hide missing artwork placeholder", "Artwork", "bool");
     add("prefer_folder_art", "Prefer folder artwork", "Artwork", "bool");
+    add("visualizer_colour","Visualizer colour","Visualizer","colour");
     add("visualizer", "Show visualizer", "Visualizer", "bool");
     J styleIds=J::array(),styleLabels=J::array();for(int id:visualizerIds){styleIds.push_back(id);styleLabels.push_back(visualizerName(id));}
     add("visualizer_style", "Local fullscreen style", "Visualizer", "choice", styleIds);rows.back()["choice_labels"]=styleLabels;
@@ -213,10 +227,11 @@ nlohmann::json settingFields() {
     add("listening_hide_clock", "Hide clock", "Listening Mode", "bool");
     add("listening_hide_metadata", "Hide technical metadata", "Listening Mode", "bool");
     add("listening_hide_footer", "Hide footer", "Listening Mode", "bool");
+    add("exit_fullscreen_on_stop","Exit fullscreen on Stop","Playback","bool");
     add("auto_fullscreen", "Auto Fullscreen", "Playback", "bool");
-    add("gapless_playback", "Gapless audio CD playback", "Playback", "bool");
+    add("gapless_playback", "Gapless playback", "Playback", "bool");
     add("remember_shuffle_repeat", "Remember shuffle / repeat", "Playback", "bool");
-    add("screensaver_seconds", "Screensaver", "Display", "choice",
+    add("screensaver_seconds", "Screensaver", "Appearance", "choice",
         {0, 30, 60, 120, 300, 600, 1800});
     add("remote_enabled", "Enable web remote", "Remote", "bool");
 
@@ -235,7 +250,9 @@ bool patchSettings(Settings &s, const nlohmann::json &patch, std::string &error)
         auto key = it.key();
         auto &v = it.value();
         bool *flag = nullptr;
-        if (key == "auto_fullscreen")
+        if(key=="full_player_card")flag=&next.fullPlayerCard;
+        else if(key=="exit_fullscreen_on_stop")flag=&next.exitFullscreenOnStop;
+        else if (key == "auto_fullscreen")
             flag = &next.autoFullscreen;
         else if (key == "listening_hide_title")
             flag = &next.listeningHideTitle;
@@ -245,6 +262,8 @@ bool patchSettings(Settings &s, const nlohmann::json &patch, std::string &error)
             flag = &next.listeningHideMetadata;
         else if (key == "listening_hide_footer")
             flag = &next.listeningHideFooter;
+        else if(key=="animated_background")
+            flag=&next.animatedBackground;
         else if (key == "show_clock")
             flag = &next.showClock;
         else if (key == "clock_24h")
@@ -277,8 +296,14 @@ bool patchSettings(Settings &s, const nlohmann::json &patch, std::string &error)
                 return false;
             }
             *flag = v.get<bool>();
+            if(key=="animated_background")next.backgroundAnimation=next.animatedBackground?std::max(1,next.backgroundAnimation):0;
             continue;
         }
+        if(key=="collections_view"||key=="radio_view"||key=="playlists_view"){if(!v.is_string()||(v!="list"&&v!="grid")){error="Choose List or Grid.";return false;}if(key=="collections_view")next.collectionsView=v.get<std::string>();else if(key=="radio_view")next.radioView=v.get<std::string>();else next.playlistsView=v.get<std::string>();continue;}
+        if(key=="visualizer_colour"){if(!v.is_string()){error="Invalid visualizer colour.";return false;}auto colour=v.get<std::string>();if(colour!="theme"&&(colour.size()!=7||colour[0]!='#'||colour.find_first_not_of("0123456789abcdefABCDEF",1)!=colour.npos)){error="Invalid visualizer colour.";return false;}next.visualizerColour=colour;continue;}
+        if(key=="look"){if(!v.is_string()||(v!="modern"&&v!="classic")){error="Invalid look.";return false;}next.look=v.get<std::string>();continue;}
+        if(key=="menu_opacity"||key=="background_speed"){if(!v.is_number_integer()){error="Expected an integer: "+key;return false;}auto n=v.get<int64_t>();if((key=="menu_opacity"&&(n<50||n>100||n%5))||(key=="background_speed"&&n!=25&&n!=50&&n!=75&&n!=100&&n!=125&&n!=150&&n!=200)){error="Appearance value out of range.";return false;}if(key=="menu_opacity")next.menuOpacity=int(n);else next.backgroundSpeed=int(n);continue;}
+        if(key=="background_animation"){if(!v.is_number_integer()||v.get<int64_t>()<0||v.get<int64_t>()>3){error="Invalid background animation.";return false;}next.backgroundAnimation=v.get<int>();next.animatedBackground=next.backgroundAnimation!=0;continue;}
         if(key=="visualizer_expand"){
             if(!v.is_boolean()){error="Expected a boolean: "+key;return false;}
             next.visualizerExpand=v.get<bool>();continue;
@@ -491,6 +516,7 @@ bool loadSettings(const std::string &path, Settings &s, std::string &error) {
     }
     auto theme = text(j, "theme", "dark");
     s.theme = theme == "light" || theme == "oled" ? theme : "dark";
+    if(!j.contains("background_animation")&&j.contains("animated_background")&&j["animated_background"].is_boolean()){s.animatedBackground=j["animated_background"].get<bool>();s.backgroundAnimation=s.animatedBackground?1:0;}
     auto accent = text(j, "accent_colour", "#3B82F6");
     s.accent = normalizeColour(accent) ? accent : "#3B82F6";
     if (j.contains("volume") && j["volume"].is_number_integer())
@@ -670,7 +696,8 @@ size_t BufferedInput::read(void *dest, size_t n) {
                 break;
             start_ = pos_;
             count_ =
-                inner_->read(buffer_.data(), std::min<uint64_t>(buffer_.size(), size() - pos_));
+                inner_->read(buffer_.data(), std::min<uint64_t>(std::min(buffer_.size(),refill_), size() - pos_));
+            refill_=std::min(buffer_.size(),refill_*2);
             if (!count_)
                 break;
         }
