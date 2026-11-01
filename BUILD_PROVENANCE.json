@@ -12,7 +12,7 @@
   "player_reference": "MiSTer_Hi-Fi(20261030-155151).zip",
   "player_reference_sha256": "7333698865718a82aa6bef65689130d5d7aab221de22d0e631c931d9e85ba1fc",
   "release_baseline": "Prospero Hi-Fi v1.3.0; incorporates unreleased v1.4 development",
-  "build_variant": "native-agc-v2-ui-performance",
+  "build_variant": "native-agc-v2-final",
   "renderer": "ps5agc",
   "target_fps": 60,
   "gpu_backend_source": "ps5link-sdk ea771e535378740b6a058b8e5419eb8a0e0e0ec8; SharpProspero 5dfdb4b0b166e83dc9ae275001afb695f12c7174",
@@ -110,5 +110,9 @@
     "single background artwork worker",
     "background performance log writes",
     "visible Files rows only"
-  ]
+  ],
+  "final_polish": {
+    "artwork": "aspect-fit; right-column height; vertical centering; 24-unit gap",
+    "web": "consolidated browser styling; player rules retained"
+  }
 }

@@ -657,6 +657,18 @@ class UI {
     std::vector<unsigned char> remoteSurface(SDL_Surface *surface) {
         return remoteCoverJpeg(surface);
     }
+    // Fit artwork beside the metadata column without stretching, cropping or a square mat.
+    void imageWithin(SDL_Texture *t,int x,int top,int width,int height){
+        int left=renderX(x),available=renderX(x+width)-left;
+        int w=1,h=1;if(t)SDL_QueryTexture(t,nullptr,nullptr,&w,&h);
+        float scale=std::min(float(available)/std::max(1,w),float(height)/std::max(1,h));
+        SDL_Rect dst{left,top+(height-int(h*scale))/2,std::max(1,int(w*scale)),std::max(1,int(h*scale))};
+        if(t){
+            auto born=imageBirth_.find(t);Uint8 alpha=born==imageBirth_.end()?255:Uint8(std::min<Uint64>(255,(SDL_GetTicks64()-born->second)*255/180));
+            SDL_SetTextureAlphaMod(t,alpha);SDL_RenderCopy(r_,t,nullptr,&dst);SDL_SetTextureAlphaMod(t,255);
+            if(recording_){auto found=screenImages_.find(t);if(found!=screenImages_.end()){screenCover_=found->second;record({2,dst.x,dst.y,dst.w,dst.h});}}
+        }else{NativeCoordinates coordinates(nativeCoordinates_);rect(dst.x,dst.y,dst.w,dst.h,PANEL);for(int i=0;i<5;i++)rect(dst.x+dst.w/4+i*dst.w/10,dst.y+dst.h/2-(i%3+1)*dst.h/20,dst.w/18,(i%3+1)*dst.h/10,LINE);}
+    }
     void image(SDL_Texture *t, int x, int y, int size) {
         x = renderX(x);
         size = renderX(size);

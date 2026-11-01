@@ -1396,7 +1396,7 @@ class App {
     }
     void drawFullscreen(const Playback &p) {
         if(settings.fullPlayerCard)ui.roundedRect(64,126,1136,422+layout().extraHeight(),PANEL,16);
-        if(artworkVisible())ui.image(artTexture,settings.fullPlayerCard?84:64,140,settings.fullPlayerCard?380:400);
+        if(artworkVisible()){int left=settings.fullPlayerCard?84:64;auto volume=volumeRect();ui.imageWithin(artTexture,left,142,playerX()-left-24,volume.y+volume.h-142);}
         int x=playerX(),width=playerWidth();
         ui.text(x,142,"NOW PLAYING"+(p.count>0?"  "+std::to_string(p.index+1)+"/"+std::to_string(p.count):std::string{}),15,MUTED,width);
         ui.marquee(x,180,trackTitle(p),34,TEXT,width,"fullscreen-title");

@@ -1,10 +1,10 @@
 # Prospero Hi-Fi
 
-A PS5 homebrew music player by **Anime0t4ku**, based on NX Hi-Fi and MiSTer Hi-Fi.
+A music player for homebrew-enabled PS5 consoles by **Anime0t4ku**, based on NX Hi-Fi and MiSTer Hi-Fi.
 
-Play MP3, FLAC, PCM WAV and Ogg Vorbis from internal storage, M.2, USB drives or SMB network shares. Play physical audio CDs using a supported external USB CD/DVD drive.
+Play MP3, FLAC, WAV, Ogg Vorbis and M4A (AAC/ALAC) from internal storage, M.2, USB drives or SMB network shares. Listen to internet radio or play physical audio CDs using a supported external USB CD/DVD drive.
 
-Features include album artwork, a five-band equalizer, shuffle, repeat, theme colors, fullscreen visualizers and remote control from a browser or NX Hi-Fi.
+Features include music collections, playlists, album artwork, a five-band equalizer, shuffle, repeat, customizable themes and animated backgrounds, fullscreen visualizers, and remote control from a browser or NX Hi-Fi.
 
 ## Installation
 
@@ -55,7 +55,7 @@ Audio plays on the PS5. The mini player, browser and remote clients use the stoc
 
 ## Notes
 
-Prospero must stay open during playback; music cannot continue in the background while playing PS5 games. Settings include themes, visualizer options and Listening Mode preferences.
+Prospero must stay open during playback; music cannot continue in the background while playing PS5 games. Settings include appearance, visualizer and Listening Mode preferences.
 
 ## Building
 

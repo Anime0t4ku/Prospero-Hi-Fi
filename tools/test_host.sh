@@ -14,6 +14,7 @@ build_run core build-host/core.o build-host/decoder.o -lm -ldl
 build_run audio_analysis
 build_run natural_sort build-host/core.o
 build_run appearance build-host/core.o build-host/cover_codec.o build-host/decoder.o "${libs[@]}" -lm -ldl
+build_run artwork_fit build-host/core.o build-host/cover_codec.o "${libs[@]}"
 build_run badge_layout build-host/core.o "${libs[@]}"
 build_run disc source/disc_metadata.cpp build-host/core.o
 build_run storage_devices source/storage_devices.cpp source/optical_detection.cpp build-host/core.o
