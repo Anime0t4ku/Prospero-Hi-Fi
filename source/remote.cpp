@@ -364,7 +364,7 @@ bool RemoteServer::serve(int fd) {
         return false;
     }
     size_t length = std::stoul(count);
-    if (length > 262144) {
+    if (length > (path=="/api/cmd"?3000000u:262144u)) {
         jsonResponse(fd, failure("Request too large."), 413);
         return false;
     }

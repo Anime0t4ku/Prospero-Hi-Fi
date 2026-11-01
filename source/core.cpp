@@ -201,12 +201,13 @@ nlohmann::json settingFields() {
     rows.back()["disabled_with_oled"]=true;
     add("background_speed","Animation speed","Appearance","choice",{25,50,75,100,125,150,200});rows.back()["choice_labels"]={"25%","50%","75%","100%","125%","150%","200%"};rows.back()["disabled_with_oled"]=true;rows.back()["requires_enabled"]="background_animation";
     add("menu_opacity","Menu opacity","Appearance","choice",{50,55,60,65,70,75,80,85,90,95,100});rows.back()["choice_labels"]={"50%","55%","60%","65%","70%","75%","80%","85%","90%","95%","100%"};
-    add("collections_view","Collections view","Appearance","choice",{"list","grid"});rows.back()["choice_labels"]={"List","Grid"};
-    add("radio_view","Radio stations view","Appearance","choice",{"list","grid"});rows.back()["choice_labels"]={"List","Grid"};
     add("full_player_card","Full player card","Appearance","bool");
-    add("playlists_view","Playlists view","Appearance","choice",{"list","grid"});rows.back()["choice_labels"]={"List","Grid"};
     add("show_clock", "Show clock", "Appearance", "bool");
     add("clock_24h", "24-hour clock", "Appearance", "bool");rows.back()["requires_enabled"]="show_clock";
+    add("manage_shares","SMB shares","Library","manager");
+    add("manage_collections","Collections","Library","manager");
+    add("manage_playlists","Playlists","Library","manager");
+    add("manage_radio","Online Radio","Library","manager");
     add("show_artwork", "Show artwork", "Artwork", "bool");
     add("hide_missing_art", "Hide missing artwork placeholder", "Artwork", "bool");
     add("prefer_folder_art", "Prefer folder artwork", "Artwork", "bool");
@@ -531,6 +532,7 @@ bool loadSettings(const std::string &path, Settings &s, std::string &error) {
         for (int i = 0; i < 5; i++)
             if (j["eq"][i].is_number())
                 s.eq[i] = std::clamp(j["eq"][i].get<float>(), -6.f, 6.f);
+    for(auto key:{"collections_view","playlists_view","radio_view"})if(j.contains(key)){std::string ignored;patchSettings(s,nlohmann::json{{key,j[key]}},ignored);}
     auto fields = settingFields();
     for (auto &field : fields) {
         std::string key = field["key"];

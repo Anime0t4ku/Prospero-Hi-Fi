@@ -12,7 +12,7 @@ int main(int argc,char **argv) {
     if(screenshot)settings.remoteEnabled=false;
 #endif
     if(!storageAccessReady())error="Storage access unavailable. Start your local ELF loader (port 9021), then reopen Prospero Hi-Fi.";
-    playbackTrace("boot.prospero-2.0.0-agc",0,true);
+    playbackTrace("boot.prospero-2.1.0-agc",0,true);
 #ifdef __PROSPERO__
     SDL_SetHint(SDL_HINT_RENDER_DRIVER,"ps5agc");
 #endif

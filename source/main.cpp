@@ -151,6 +151,7 @@ class App {
     void choose(std::string title, std::vector<nlohmann::json> values,
                 std::vector<std::string> labels, nlohmann::json current,
                 std::function<void(nlohmann::json)> apply) {
+        optionSeparator = -1;
         optionTitle = std::move(title);
         optionValues = std::move(values);
         optionLabels = std::move(labels);
@@ -160,6 +161,7 @@ class App {
             if (optionValues[i] == current)
                 optionIndex = i;
     }
+    int optionSeparator = -1;
     void drawOptions() {
         if (!optionApply)
             return;
@@ -169,7 +171,8 @@ class App {
         ui.scrollIndicator(1117,170,layout().optionRows()*48-6,int(optionLabels.size()),first,layout().optionRows());
         for (int i = first; i < std::min(first + layout().optionRows(), int(optionLabels.size()));
              ++i)
-            ui.button(170, 170 + (i - first) * 48, 940, 42, optionLabels[i], i == optionIndex);
+            {if(i==optionSeparator)ui.rect(182,168+(i-first)*48,916,1,MUTED);
+            ui.button(170, 170 + (i - first) * 48, 940, 42, optionLabels[i], i == optionIndex);}
     }
     bool sourceSelected = false, controlsFocused = false;
     SettingsNavigation settingsNavigation;
@@ -564,9 +567,9 @@ class App {
         } else if (op == "playpause")
             player.pause();
         else if (op == "previous")
-            player.previous();
+            previousTrack();
         else if (op == "next")
-            player.next();
+            nextTrack();
         else if (op == "stop")
             stopPlayback();
         else if (op == "shuffle") {
@@ -762,7 +765,7 @@ class App {
         if(key=="look")return settings.look=="classic"?"Classic":"Modern";
         if(key=="background_animation")return settings.theme=="oled"?"Unavailable with OLED theme":std::array<const char*,4>{{"Off","Ambient drift","Aurora","Gradient waves"}}[settings.animatedBackground?settings.backgroundAnimation:0];
         if(key=="visualizer_style")return visualizerName(settings.visualizerStyle);
-        if(kind=="action")return "";
+        if(kind=="action"||kind=="manager")return "";
         if(key=="eq_preset")return settingsDocument(settings)[key].get<int>()<0?"Custom":presets[settingsDocument(settings)[key].get<int>()].name;
         if(kind=="gain"){char text[24];std::snprintf(text,sizeof(text),"%+.1f dB",settingsDocument(settings)[key].get<float>());return text;}
         if (kind == "info")
@@ -783,6 +786,7 @@ class App {
             return settings.theme == "oled" ? "OLED" : settings.theme == "light" ? "Light" : "Dark";
         return value.is_string() ? value.get<std::string>() : value.dump();
     }
+    #include "app_library_settings.inc"
     void settingAction(int direction = 1) {
         if (!settingsNavigation.entries)
             return;
@@ -790,6 +794,7 @@ class App {
         auto field = fields[settingsNavigation.fieldIndex()];
         std::string key = field["key"], kind = field["kind"];
         if(settingDisabled(field))return;
+        if(kind=="manager"){librarySettings(key);return;}
         if(kind=="gain"){float gain=settingsDocument(settings)[key].get<float>();applySettings({{key,std::clamp(gain+direction*.5f,-6.f,6.f)}});return;}
         if(kind=="action"){applySettings({{key,true}});return;}
         if(key=="visualizer_style"||key=="visualizer_sensitivity"||key=="visualizer_smoothing"){visualizerChoice(key);return;}
@@ -1022,9 +1027,9 @@ class App {
     }
     int maxSelection() const {
         if(page==7||page==8||page==10){const auto &data=albumPage(currentAlbumKey());return data.contains("tracks")?std::max(0,int(data["tracks"].size())-1):0;}
-        if(page==5)return libraryID.empty()?int(catalog["libraries"].size()):std::max(0,int(libraryAlbums().size())-1);
-        if(page==6)return catalog["stations"].size();
-        if(page==9)return catalog["playlists"].size();
+        if(page==5)return libraryID.empty()?std::max(0,int(catalog["libraries"].size())-1):std::max(0,int(libraryAlbums().size())-1);
+        if(page==6)return std::max(0,int(catalog["stations"].size())-1);
+        if(page==9)return std::max(0,int(catalog["playlists"].size())-1);
         if (page == 4)
             return clientEditing ? (editClientIndex < 0 ? 4 : 5)
                                  : int(settings.remoteClients.size()) + 1;
@@ -1033,7 +1038,7 @@ class App {
         if (page == 1)
             return std::max(0, int(entries.size()) - 1);
         if (page == 0)
-            return int(storageDevices_.size()+settings.shares.size());
+            return std::max(0,int(storageDevices_.size()+settings.shares.size())-1);
 
         return int(settingFields().size()) - 1;
     }
@@ -1075,13 +1080,13 @@ class App {
     void transport(int index) {
         switch (index) {
         case 0:
-            player.previous();
+            previousTrack();
             break;
         case 1:
             player.pause();
             break;
         case 2:
-            player.next();
+            nextTrack();
             break;
         case 3:
             stopPlayback();
@@ -1143,6 +1148,7 @@ class App {
         }
         if (page == 0) {
             int localCount=storageDevices_.size();
+            if(localCount+settings.shares.size()==0)return;
             if(selected<localCount)browse(Source{false,{},storageFolder(settings,storageDevices_[selected])},"");
             else if(selected==localCount+int(settings.shares.size())){
                 edit={};editIndex=-1;editing=true;editSourcesRevision=sourcesRevision;selected=scroll=0;
@@ -1495,7 +1501,7 @@ class App {
             if(fullscreen&&fullFocus.row==-1)hint("Cross","Expand visualizer");
             else if(id>=0)hint("Cross",labels[id]);
             hint("Circle",fullscreen?"Close":"Browse");
-        }else{hint("Dpad","Navigate");hint("Cross",page==3?(settingsNavigation.entries?"Change":"Select"):editing?"Edit":"Open");hint("Circle",page==3&&settingsNavigation.entries?"Categories":"Back");if(page==0)hint("Triangle","Edit source");if(page==1)hint("Triangle","Track / album actions");if(page==5||page==6||page==9)hint("Triangle","Manage");if(page==7||page==8||page==10)hint("Triangle","Album actions");}
+        }else{hint("Dpad","Navigate");hint("Cross",page==3?(settingsNavigation.entries?"Change":"Select"):editing?"Edit":"Open");hint("Circle",page==3&&settingsNavigation.entries?"Categories":"Back");if(page==0)hint("Triangle","Manage");if(page==1)hint("Triangle","Track / album actions");if(page==5||page==6||page==9)hint("Triangle","Manage");if(page==7||page==8||page==10)hint("Triangle","Album actions");}
         if(!fullscreen){hint("Touchpad","Player");hint("L1","");hint("R1","Tabs");hint("R3","Fullscreen");}
         hint("Options","Play/Pause");
         if(fullscreen){hint("L1","");hint("R1","Track");hint("L2","");hint("R2","Seek 5s");hint("L3","Listening");}
@@ -1647,8 +1653,8 @@ class App {
             constexpr u64 playback=HidNpadButton_Plus|HidNpadButton_L|HidNpadButton_R|HidNpadButton_ZL|HidNpadButton_ZR;
             if(down&~playback){listeningBlocked=held|down;setListening(false);return;}
             if(down&HidNpadButton_Plus)player.pause();
-            if(down&HidNpadButton_L)player.previous();
-            if(down&HidNpadButton_R)player.next();
+            if(down&HidNpadButton_L)previousTrack();
+            if(down&HidNpadButton_R)nextTrack();
             if(down&HidNpadButton_ZL)player.seek(-5);
             if(down&HidNpadButton_ZR)player.seek(5);
             SDL_Event event;while(SDL_PollEvent(&event))if(event.type==SDL_QUIT)running=false;
@@ -1659,7 +1665,7 @@ class App {
             if(horizontalRepeat.fire(direction,down&(HidNpadButton_Left|HidNpadButton_Right),SDL_GetTicks64()))cycleVisualizer(direction);
             if(down&HidNpadButton_B){visualizerFullscreen=false;return;}
             if(down&HidNpadButton_Plus)player.pause();
-            if(down&HidNpadButton_L)player.previous();if(down&HidNpadButton_R)player.next();
+            if(down&HidNpadButton_L)previousTrack();if(down&HidNpadButton_R)nextTrack();
             if(down&HidNpadButton_ZL)player.seek(-5);if(down&HidNpadButton_ZR)player.seek(5);
             SDL_Event event;while(SDL_PollEvent(&event)){if(event.type==SDL_QUIT)running=false;else if(event.type==SDL_MOUSEBUTTONDOWN||event.type==SDL_FINGERDOWN)visualizerFullscreen=false;}return;
         }
@@ -1700,9 +1706,9 @@ class App {
         if(horizontalRepeat.fire(horizontal,down&(HidNpadButton_Left|HidNpadButton_Right),SDL_GetTicks64()))
             adjust(horizontal);
         if (down & (fullscreen ? HidNpadButton_L : HidNpadButton_ZL))
-            player.previous();
+            previousTrack();
         if (down & (fullscreen ? HidNpadButton_R : HidNpadButton_ZR))
-            player.next();
+            nextTrack();
         if(fullscreen&&(down&HidNpadButton_ZL))player.seek(-5);
         if(fullscreen&&(down&HidNpadButton_ZR))player.seek(5);
         if (!fullscreen && !colourPicking && !optionApply && (down & HidNpadButton_Minus)) {
@@ -1717,20 +1723,7 @@ class App {
                 return;
             }
             if (!fullscreen && page == 0 && !editing) {
-                if (selected < int(storageDevices_.size())) {
-                    editStorageFolder(storageDevices_[selected]);
-                    return;
-                }
-                if (selected >= int(storageDevices_.size()) && selected < int(storageDevices_.size()+settings.shares.size())) {
-                    editIndex = selected - int(storageDevices_.size());
-                    edit = settings.shares[editIndex];
-                } else {
-                    editIndex = -1;
-                    edit = {};
-                }
-                editing = true;
-                editSourcesRevision = sourcesRevision;
-                selected = scroll = 0;
+                sourceActions();
             } else
                 player.stop();
         }
@@ -2071,8 +2064,7 @@ class App {
                 names.push_back(s.name.empty() ? s.server : s.name);
                 values.push_back(s.server + " / " + s.share);
             }
-            names.push_back("+ Add SMB share");
-            values.push_back("");
+
         } else {
             heading = settingsNavigation.current().name;
             const auto fields = settingFields();
