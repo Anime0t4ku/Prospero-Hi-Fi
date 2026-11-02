@@ -172,7 +172,7 @@ class App {
         for (int i = first; i < std::min(first + layout().optionRows(), int(optionLabels.size()));
              ++i)
             {if(i==optionSeparator)ui.rect(182,168+(i-first)*48,916,1,MUTED);
-            ui.button(170, 170 + (i - first) * 48, 940, 42, optionLabels[i], i == optionIndex);}
+            if(optionValues[i].is_null())ui.text(182,180+(i-first)*48,optionLabels[i],17,MUTED,916);else ui.button(170, 170 + (i - first) * 48, 940, 42, optionLabels[i], i == optionIndex);}
     }
     bool sourceSelected = false, controlsFocused = false;
     SettingsNavigation settingsNavigation;
@@ -292,8 +292,8 @@ class App {
                 return std::string(preset.name) + "  " + settings.accent;
         return "Custom  " + settings.accent;
     }
-    bool scrubHit(int x, int y) const {
-        return seekRect().contains(x,y);
+    bool scrubHit(int x, int y) {
+        return player.snapshot().track.source.root!=RadioRoot&&seekRect().contains(x,y);
     }
     void previewScrub(int x) {
         auto p = player.snapshot();
@@ -326,6 +326,7 @@ class App {
     }
     bool fullscreen = false;
 #include "app_visualizer.inc"
+#include "app_ordering.inc"
 #include "app_collections.inc"
 #include "app_album_pages.inc"
 #include "app_playlists.inc"
@@ -336,7 +337,7 @@ class App {
         listening=enabled;scrubbing=mouseScrub=false;wake();
         verticalRepeat={};horizontalRepeat={};
     }
-    void toggleFullscreen() {
+    void toggleFullscreen() {if(movingItems)return;
         if(colourPicking)return;
         visualizerFullscreen=false;playerSettingsOpen=false;
         fullscreen=!fullscreen;listening=false;scrubbing=mouseScrub=false;
@@ -582,6 +583,7 @@ class App {
             if (!applySettings({{"volume", j.at("value")}}))
                 return fail(status);
         } else if (op == "seek" || op == "seek_to") {
+            if(player.snapshot().track.source.root==RadioRoot)return {{"ok",true}};
             const auto &value = j.at(op == "seek" ? "seconds" : "position");
             if (!value.is_number())
                 return fail("Invalid seek position.");
@@ -630,7 +632,7 @@ class App {
         J structure={{"identity",remoteIdentity()}, {"app_id","prospero-hifi"}, {"protocol_version",1}, {"listening_mode",listening},
                 {"version", Version},
                 {"catalog",catalog},
-                {"album_views",albumPages.snapshot()},{"disc_connected",discConnected},{"disc_ejecting",discEjecting},{"disc_eject_error",discEjectError},{"disc_signature",discSignature},{"disc_view",albumPage("disc")},
+                {"album_views",publishedAlbumViews()},{"disc_connected",discConnected},{"disc_ejecting",discEjecting},{"disc_eject_error",discEjectError},{"disc_signature",discSignature},{"disc_view",albumPage("disc")},
                 {"local_sources",localSources},
                 {"physical_disc",discConnected},
                 {"revision", revision},
@@ -658,9 +660,9 @@ class App {
                   {"playing", p.playing},
                   {"paused", p.paused},
                   {"busy", p.busy},
-                  {"error", p.error},
+                  {"error", visibleNotice(p.error,true)},
                   {"spectrum", p.spectrum},
-                  {"track_path",p.track.path},{"source_ref",sourceReference(p.track.source)},
+                  {"playlist_id",p.track.playlist},{"track_path",p.track.path},{"source_ref",sourceReference(p.track.source)},
                   {"track_key", p.track.source.share.server + "/" + p.track.source.share.share +
                                     "/" + p.track.source.root + "/" + p.track.path}}}});
         return result;
@@ -877,7 +879,7 @@ class App {
     int sourceTabPage=0;
     std::map<int,std::pair<int,int>> tabPositions;
     int mainTab()const{return page==5||page==7?5:page==3?3:page==6?6:page==8?8:page==9||page==10?9:0;}
-    void selectTab(int tab){
+    void selectTab(int tab){if(movingItems)return;
         if(tab==mainTab())return;
         tabPositions[page]={selected,scroll};
         if(mainTab()==0)sourceTabPage=page;
@@ -1043,8 +1045,10 @@ class App {
         return int(settingFields().size()) - 1;
     }
     void move(int delta) {
+        if(movingItems){moveLibraryItem(delta*(page==5&&collectionGrid()?4:1));return;}
         if (optionApply) {
             optionIndex = (optionIndex + delta + int(optionValues.size())) % optionValues.size();
+            for(size_t n=0;optionValues[optionIndex].is_null()&&n<optionValues.size();n++)optionIndex=(optionIndex+(delta<0?-1:1)+int(optionValues.size()))%optionValues.size();
             return;
         }
         if (colourPicking) {
@@ -1116,7 +1120,9 @@ class App {
         }
     }
     void action() {
+        if(movingItems){finishItemMove(true);return;}
         if (optionApply) {
+            if(optionValues[optionIndex].is_null())return;
             auto f = std::move(optionApply);
             optionApply = nullptr;
             f(optionValues[optionIndex]);
@@ -1164,6 +1170,7 @@ class App {
     }
 
     void adjust(int dir) {
+        if(movingItems){if(page==5&&collectionGrid())moveLibraryItem(dir);return;}
         if (optionApply) {
             move(dir);
             return;
@@ -1197,9 +1204,11 @@ class App {
     }
 
     void back() {
+        if(movingItems){finishItemMove(false);return;}
         if(visualizerFullscreen){visualizerFullscreen=false;return;}
         if (optionApply) {
             optionApply = nullptr;
+            matchAlbumID.clear();
             return;
         }
         if(colourPicking){closeColours(false);return;}
@@ -1243,6 +1252,7 @@ class App {
         }
     }
     void click(int x, int y) {
+        if(movingItems)return;
         if(visualizerFullscreen){visualizerFullscreen=false;return;}
         if(listening){setListening(false);return;}
         if (connectionOpen || scanOpen) {
@@ -1254,7 +1264,7 @@ class App {
         ui.scrollIndicator(1117,170,layout().optionRows()*48-6,int(optionLabels.size()),first,layout().optionRows());
             if (inside(x, y, 170, 170, 940, layout().optionRows() * 48)) {
                 int i = first + (y - 170) / 48;
-                if (i < int(optionValues.size())) {
+                if (i < int(optionValues.size())&&!optionValues[i].is_null()) {
                     optionIndex = i;
                     action();
                 }
@@ -1425,11 +1435,11 @@ class App {
         }
     }
     void drawSeek(const Playback &p){
-        auto a=seekRect();bool focus=!listening&&(controlsFocused||fullscreen)&&playerFocus().seek();
+        auto a=seekRect();bool focus=p.track.source.root!=RadioRoot&&!listening&&(controlsFocused||fullscreen)&&playerFocus().seek();
         if(focus){ui.roundedRect(a.x-5,a.y-5,a.w+10,a.h+10,ACCENT,10);ui.roundedRect(a.x-3,a.y-3,a.w+6,a.h+6,PANEL,8);}
         double position=scrubbing?scrubPosition:p.position;
         int y=a.y+12;ui.rect(a.x,y,a.w,5,LINE);
-        if(p.duration>0){int offset=int(a.w*std::clamp(position/p.duration,0.,1.));ui.rect(a.x,y,offset,5,ACCENT);ui.rect(a.x+std::clamp(offset,4,a.w-4)-4,y-4,8,13,ACCENT);}
+        if(p.track.source.root!=RadioRoot&&p.duration>0){int offset=int(a.w*std::clamp(position/p.duration,0.,1.));ui.rect(a.x,y,offset,5,ACCENT);ui.rect(a.x+std::clamp(offset,4,a.w-4)-4,y-4,8,13,ACCENT);}
         ui.text(a.x,a.y+30,timeLabel(position),fullscreen?18:14,MUTED);
         auto duration=p.track.source.root==RadioRoot?std::string("LIVE"):p.duration>0?(p.details.durationEstimated?"~":"")+timeLabel(p.duration):"--:--";
         ui.rightText(a.x+a.w,a.y+30,duration,fullscreen?18:14,MUTED);
@@ -1482,7 +1492,9 @@ class App {
         ui.button(198+(52), 531, 360, 44, "Save colour", colourSelection == 14);
         ui.button(198+(432), 531, 380, 44, "Cancel", colourSelection == 15);
     }
-    void drawControls(const Playback &p,const std::string &message){
+    mutable std::string lastStatusNotice,lastPlaybackNotice;mutable Uint64 statusNoticeAt=0,playbackNoticeAt=0;
+    std::string visibleNotice(const std::string &message,bool playback=false)const{auto &last=playback?lastPlaybackNotice:lastStatusNotice;auto &at=playback?playbackNoticeAt:statusNoticeAt;if(message!=last){last=message;at=SDL_GetTicks64();}return !message.empty()&&SDL_GetTicks64()-at>=6000?std::string{}:message;}
+    void drawControls(const Playback &p,const std::string &rawMessage){auto message=visibleNotice(rawMessage,!p.error.empty()&&rawMessage==p.error);if(movingItems)message=movingKind=="playlist"?"Moving track — confirm to save, Back to cancel":"Moving album — confirm to save, Back to cancel";
         if(!colourPicking){drawSeek(p);if(!listening)drawPlayerButtons(p);}
         // Status/errors stay visible outside the compact controls-only footer.
         if(!message.empty())ui.text(fullscreen?30:600,fullscreen?90:64,message,13,ACCENT,fullscreen?1210:620);
@@ -1491,6 +1503,7 @@ class App {
         int y=layout().footerY()+8;std::vector<std::pair<std::string,std::string>> hints;auto flush=[&]{ui.centeredHints(y,hints);};
         auto hint=[&](const char *button,const std::string &action){hints.emplace_back(button,action);};
         if(listening){hint("Options","Play/Pause");hint("L1","");hint("R1","Track");hint("L2","");hint("R2","Seek 5s");hint("L3","Exit");flush();return;}
+        if(movingItems){hint("Dpad","Move");hint("A","Save order");hint("B","Cancel");flush();return;}
         if(optionApply){hint("Dpad","Navigate");hint("Cross","Select");hint("Circle","Back");flush();return;}
         if(playerSettingsOpen&&!colourPicking){hint("L1","");hint("R1","Tabs");hint("Dpad","Adjust");hint("Cross","Choose");hint("Circle","Close");flush();return;}
         if(colourPicking){hint("Dpad","Colour");hint("Cross","Choose");hint("Circle","Cancel");flush();return;}
@@ -1711,7 +1724,7 @@ class App {
             nextTrack();
         if(fullscreen&&(down&HidNpadButton_ZL))player.seek(-5);
         if(fullscreen&&(down&HidNpadButton_ZR))player.seek(5);
-        if (!fullscreen && !colourPicking && !optionApply && (down & HidNpadButton_Minus)) {
+        if (!movingItems && !fullscreen && !colourPicking && !optionApply && (down & HidNpadButton_Minus)) {
             controlsFocused=!controlsFocused;syncPlayerFocus();
         }
         if (!colourPicking && (down & HidNpadButton_X)) {
@@ -1819,6 +1832,7 @@ class App {
     Uint64 storagePollAt=0;std::vector<StorageDevice> cachedDevices;
     void update() {
         if(collection&&SDL_GetTicks64()-catalogAt>500){catalogAt=SDL_GetTicks64();refreshCatalog();}
+        pollAlbumMatches();
         if(!storagePollAt||SDL_GetTicks64()-storagePollAt>=500){cachedDevices=detectedStorageDevices();storagePollAt=SDL_GetTicks64();}
         auto devices=cachedDevices;
         bool connected=std::any_of(devices.begin(),devices.end(),[](const auto &device){return device.id==-2;});
@@ -1900,7 +1914,9 @@ class App {
         if(p.playing&&!p.busy&&!p.track.path.empty()&&metadataKey!=tagKey){tagKey=metadataKey;if(lower(p.track.path).size()>=5&&lower(p.track.path).substr(p.track.path.size()-5)==".flac")tags.request(p.track.source,p.track.path,3);else tags.cancel();}
         LoadResult tagResult;if(tags.poll(tagResult)&&tagResult.ok)player.metadata(tagResult.details,tagResult.source,tagResult.path);
         Source artworkSource=p.track.source;int stationArtRevision=0;if(p.track.source.root==RadioRoot)for(auto &station:catalog["stations"])if(station["url"]==p.track.path){artworkSource.share.folder=station.value("logo",std::string{});artworkSource.share.domain=collection->imagePath("station",station["id"]);stationArtRevision=station.value("image_revision",0);break;}
-        auto key = std::to_string(stationArtRevision)+artworkSource.share.folder+"/"+p.track.source.share.server + "/" + p.track.source.share.share + "/" +
+        if(!p.track.playlist.empty())collection->ensureImage("playlist",p.track.playlist);
+        auto playlistArt=playlistPlayerArtwork(p);
+        auto key = playlistArt+"/"+std::to_string(catalog.value("revision",uint64_t(0)))+"/"+std::to_string(preferPlaylistArtwork(p))+"/"+std::to_string(stationArtRevision)+artworkSource.share.folder+"/"+p.track.source.share.server + "/" + p.track.source.share.share + "/" +
                    p.track.source.root + "/" + p.track.path +
                    (settings.preferFolderArt ? "/folder-first" : "/embedded-first");
         if(auto album=playbackAlbum(p))key+="/album-art-"+std::to_string(album->value("cover_revision",0));
@@ -1929,7 +1945,7 @@ class App {
             if (remote)
                 remote->artwork({});
             playbackTrace("main.artwork.request");
-            art.request(artworkSource, p.track.path, 2, settings.preferFolderArt);
+            art.request(artworkSource, p.track.path, 2, settings.preferFolderArt,playlistArt,preferPlaylistArtwork(p));
         }
         if (art.poll(result) && settings.showArtwork) {
             if(result.cover.empty())if(auto album=playbackAlbum(p)){std::ifstream f(collection->coverPath(album->at("id")),std::ios::binary);result.cover.assign(std::istreambuf_iterator<char>(f),{});}

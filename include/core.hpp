@@ -12,7 +12,7 @@
 #include <vector>
 
 namespace nxh {
-constexpr const char *Version = "2.1.0";
+constexpr const char *Version = "2.2.0";
 // Additive identity: legacy NX clients still use the existing wire format.
 inline nlohmann::json remoteIdentity(){
     return {{"app_id","prospero-hifi"},{"name","Prospero Hi-Fi"},{"platform","ps5"},
@@ -39,6 +39,7 @@ struct Settings {
     std::string look="modern",visualizerColour="theme",collectionsView="list",radioView="list",playlistsView="list";
     bool animatedBackground = true;
     bool showClock = true, clock24h = true, showArtwork = true, hideMissingArt = false;
+    bool playlistArtwork=false;
     bool preferFolderArt = false, visualizer = true, rememberShuffleRepeat = true;
     int visualizerStyle = 0, visualizerSensitivity = 100, visualizerSmoothing = 65;
     bool visualizerExpand = true;
@@ -118,7 +119,7 @@ struct Source {
 };
 struct Track {
     Source source;
-    std::string path, name;
+    std::string path, name, playlist;
 };
 class Input {
   public:

@@ -8,9 +8,10 @@ mutable std::vector<nlohmann::json> libraryRowsCache;
 mutable std::string libraryRowsID;
 mutable uint64_t libraryRowsRevision=~uint64_t(0);
 const std::vector<nlohmann::json> &libraryAlbums()const{
+ if(movingItems&&movingKind=="library"&&movingID==libraryID)return movingRows;
  auto revision=catalog.value("revision",uint64_t(0));
  if(libraryRowsID!=libraryID||libraryRowsRevision!=revision){libraryRowsID=libraryID;libraryRowsRevision=revision;libraryRowsCache.clear();
- for(const auto &a:catalog["albums"]){const auto &m=a["libraries"];if(std::find(m.begin(),m.end(),nlohmann::json(libraryID))!=m.end())libraryRowsCache.push_back(a);}}
+ for(const auto &a:catalog["albums"]){const auto &m=a["libraries"];if(std::find(m.begin(),m.end(),nlohmann::json(libraryID))!=m.end())libraryRowsCache.push_back(a);}for(const auto &lib:catalog["libraries"])if(lib["id"]==libraryID){auto order=lib.value("album_order",nlohmann::json::array());std::map<std::string,int> positions;for(int i=0;i<int(order.size());i++)positions[order[i].get<std::string>()]=i;std::stable_sort(libraryRowsCache.begin(),libraryRowsCache.end(),[&](const auto &a,const auto &b){return positions[a["id"].template get<std::string>()]<positions[b["id"].template get<std::string>()];});}}
  return libraryRowsCache;
 }
 // One bounded worker prepares visible covers. The renderer only uploads finished surfaces.
@@ -52,18 +53,38 @@ void editStation(nlohmann::json station=nlohmann::json::object()){
  choose("Radio station",values,labels,0,[this,station](auto value)mutable{int row=value.template get<int>();const char *keys[]={"name","url","genre","logo"};if(row<4){auto text=station.value(keys[row],std::string{});if(keyboard(keys[row],text))station[keys[row]]=text;editStation(station);return;}
  if(row==4){station["op"]="station_save";catalogCommand(station);}else if(station.contains("id")){if(row==5)catalogCommand({{"op","station_test"},{"id",station["id"]}});else choose("Delete this station?",{false,true},{"Cancel","Delete"},false,[this,station](auto yes){if(yes.template get<bool>())catalogCommand({{"op","station_remove"},{"id",station["id"]}});});}else status="Save the station first.";});
 }
-void playStation(const nlohmann::json &station,bool focusPlayer=true){Source src{false,{},RadioRoot};src.share.folder=station.value("logo",std::string{});src.share.domain=collection->imagePath("station",station.at("id"));player.play({{src,station.at("url"),station.at("name")}},0);status="Loading station...";if(focusPlayer&&!fullscreen)toggleFullscreen();}
+void playStation(const nlohmann::json &station,bool focusPlayer=true){Source src{false,{},RadioRoot};src.share.folder=station.value("logo",std::string{});src.share.domain=collection->imagePath("station",station.at("id"));player.play({{src,station.at("url"),station.at("name")}},0);status.clear();if(focusPlayer&&!fullscreen)toggleFullscreen();}
 bool switchRadioStation(int direction){auto playback=player.snapshot();if(playback.track.source.root!=RadioRoot)return false;refreshCatalog();const auto &stations=catalog["stations"];if(stations.empty()){status="No saved radio stations.";return true;}int current=-1;for(int i=0;i<int(stations.size());i++)if(collection->imagePath("station",stations[i].at("id"))==playback.track.source.share.domain){current=i;break;}if(current<0)for(int i=0;i<int(stations.size());i++)if(stations[i].at("url")==playback.track.path){current=i;break;}if(stations.size()==1&&current==0)return true;int target=current<0?(direction>0?0:int(stations.size())-1):(current+direction+int(stations.size()))%int(stations.size());playStation(stations[target],false);return true;}
 void nextTrack(){if(!switchRadioStation(1))player.next();}
 void previousTrack(){if(!switchRadioStation(-1))player.previous();}
 
 void openAlbum(const nlohmann::json &album){if(!requestAlbumPage(album.at("id")))return;if(page==5){collectionTileSelected=selected;collectionTileScroll=scroll;}collectionAlbumID=album.at("id");page=7;selected=scroll=0;}
+std::string matchAlbumID,matchArtist,matchTitle,matchRelease,matchFingerprint;bool matchKeyboard=false;
+std::string matchLabel(const nlohmann::json &m)const{return m.value("artist",std::string{})+" - "+m.value("title",std::string{})+" ("+m.value("year",std::string{})+") "+m.value("edition",std::string{});}
+void searchAlbumMatch(std::string id){auto a=collectionAlbum(id);if(!a||a->value("busy",false))return;if(matchTitle.find_first_not_of(" \t\r\n")==std::string::npos){status="Enter an album title before searching.";return;}matchRelease.clear();catalogCommand({{"op","album_search"},{"id",id},{"title",matchTitle},{"artist",matchArtist}});}
+void showAlbumMatches(std::string id,bool initial=false,nlohmann::json focus="artist"){
+ auto a=collectionAlbum(id);if(!a)return;
+ if(initial||matchAlbumID!=id){matchAlbumID=id;matchArtist=a->value("artist",std::string{});matchTitle=a->value("title",std::string{});matchRelease.clear();}
+ bool busy=a->value("busy",false);auto matches=a->value("matches",nlohmann::json::array());nlohmann::json picked;for(const auto &m:matches)if(m["id"]==matchRelease)picked=m;
+ if(picked.is_null())matchRelease.clear();
+ std::vector<nlohmann::json> values={"artist","title","search","apply","cancel",nullptr};
+ std::vector<std::string> labels={"Artist (optional): "+(matchArtist.empty()?"[not set]":matchArtist),"Album title: "+(matchTitle.empty()?"[required]":matchTitle),busy?"Searching...":"Search",picked.is_null()?"Apply match (select a suggestion first)":"Apply match: "+picked.value("title",std::string{}),"Cancel",busy?"Suggested matches (searching...)":matches.empty()?"No matches. Edit the fields above and Search.":"Suggested matches — select to preview"};
+ if(!picked.is_null()){values.push_back(nullptr);labels.push_back("Selected: "+matchLabel(picked));}
+ for(const auto &m:matches){values.push_back("release:"+m["id"].template get<std::string>());labels.push_back((m["id"]==matchRelease?"[Selected] ":"")+matchLabel(m));}
+ matchFingerprint=nlohmann::json::array({a->value("busy",false),matches,a->value("status",std::string{})}).dump();
+ choose("Fix match",values,labels,focus,[this,id](auto value){std::string action=value;if(action=="cancel"){matchAlbumID.clear();return;}if(action=="artist"||action=="title"){auto &text=action=="artist"?matchArtist:matchTitle;matchKeyboard=true;keyboard(action=="artist"?"Enter artist name (optional)":"Enter album title",text);matchKeyboard=false;showAlbumMatches(id,false,action);return;}if(action=="search")searchAlbumMatch(id);else if(action=="apply"){auto a=collectionAlbum(id);if(a&&!a->value("busy",false)&&!matchRelease.empty()){if(catalogCommand({{"op","album_match"},{"id",id},{"release",matchRelease}})){matchAlbumID.clear();return;}}}else if(action.rfind("release:",0)==0){matchRelease=action.substr(8);showAlbumMatches(id,false,"apply");return;}showAlbumMatches(id,false,action);});optionSeparator=5;
+ if(initial&&matches.empty()&&!busy){searchAlbumMatch(id);showAlbumMatches(id,false,focus);}
+}
+void pollAlbumMatches(){if(matchKeyboard||matchAlbumID.empty())return;if(!optionApply||optionTitle!="Fix match"){matchAlbumID.clear();return;}auto a=collectionAlbum(matchAlbumID);if(!a){matchAlbumID.clear();optionApply=nullptr;return;}auto fingerprint=nlohmann::json::array({a->value("busy",false),a->value("matches",nlohmann::json::array()),a->value("status",std::string{})}).dump();if(fingerprint!=matchFingerprint){auto focus=optionValues[optionIndex];showAlbumMatches(matchAlbumID,false,focus);}}
 void manageAlbum(nlohmann::json album){
- choose(album.value("title",std::string("Album")),{0,1,2,3,4,5,6},{"Open album","Collections...","Edit metadata","Search metadata","Fix match / artwork","Refresh folder","Remove album from collections"},0,[this,album](auto value)mutable{int row=value.template get<int>();std::string id=album["id"];
- if(row==0)openAlbum(album);
+ if(movingItems)return;std::vector<nlohmann::json> actions={0,1,2,4,5,6};std::vector<std::string> labels={"Open album","Collections...","Edit metadata","Fix match","Refresh folder","Remove album from collections"};if(!libraryID.empty()){actions.push_back(8);labels.push_back("Sort order");for(auto &lib:catalog["libraries"])if(lib["id"]==libraryID&&lib.value("sort",std::string("alphabetical"))=="custom"){actions.push_back(7);labels.push_back("Move album");}}
+ choose(album.value("title",std::string("Album")),actions,labels,0,[this,album](auto value)mutable{int row=value.template get<int>();std::string id=album["id"];
+ if(row==7){auto rows=libraryAlbums();for(int i=0;i<int(rows.size());i++)if(rows[i]["id"]==id){beginItemMove(false,libraryID,i);break;}}
+ else if(row==8)sortLibraryItems(false,libraryID);
+ else if(row==0)openAlbum(album);
  else if(row==1){auto members=std::make_shared<std::vector<std::string>>(album["libraries"].template get<std::vector<std::string>>());memberships({{"op","album_members"},{"id",id}},members);}
- else if(row==2||row==3){std::string name=album["title"],artist=album["artist"],year=album.value("year",std::string{});if(!keyboard("Album title",name)||!keyboard("Artist",artist))return;if(row==2&&!keyboard("Year",year))return;catalogCommand({{"op",row==2?"album_edit":"album_search"},{"id",id},{"title",name},{"artist",artist},{"year",year}});}
- else if(row==4){std::vector<nlohmann::json> values;std::vector<std::string> labels;for(auto &m:album.value("matches",nlohmann::json::array())){values.push_back(m["id"]);labels.push_back(m.value("artist",std::string{})+" - "+m.value("title",std::string{})+" ("+m.value("year",std::string{})+")");}if(values.empty()){status="Use Search metadata first.";return;}choose("Choose album edition",values,labels,values.front(),[this,id](auto release){catalogCommand({{"op","album_match"},{"id",id},{"release",release}});});}
+ else if(row==2){std::string name=album["title"],artist=album["artist"],year=album.value("year",std::string{});if(!keyboard("Album title",name)||!keyboard("Artist",artist))return;if(!keyboard("Year",year))return;catalogCommand({{"op","album_edit"},{"id",id},{"title",name},{"artist",artist},{"year",year}});}
+ else if(row==4)showAlbumMatches(id,true);
  else if(row==5)catalogCommand({{"op","album_refresh"},{"id",id}});
  else choose("Remove collection entry? Files are kept.",{false,true},{"Cancel","Remove"},false,[this,id](auto yes){if(yes.template get<bool>())catalogCommand({{"op","album_remove"},{"id",id}});});});
 }
@@ -73,8 +94,8 @@ void collectionAction(){
  if(libraryID.empty()){if(selected<int(catalog["libraries"].size())){collectionRootSelected=selected;libraryID=catalog["libraries"][selected]["id"];selected=scroll=0;catalogCommand({{"op","library_check"},{"id",libraryID}});}else createLibrary();}
  else{auto rows=libraryAlbums();if(selected<int(rows.size()))openAlbum(rows[selected]);}
 }
-void manageLibrary(nlohmann::json lib){choose("Manage collection",{0,1,2,3},{"Rename collection","Delete collection (keep album files)","Create collection",libraryViewLabel("collections_view")},0,[this,lib](auto v){if(v.template get<int>()==3){libraryViewChoice("collections_view");return;}if(v.template get<int>()==2){createLibrary();return;}if(v.template get<int>()==0){std::string name=lib["name"];if(keyboard("Collection name",name))catalogCommand({{"op","library_save"},{"id",lib["id"]},{"name",name}});}else choose("Delete this collection?",{false,true},{"Cancel","Delete"},false,[this,lib](auto yes){if(yes.template get<bool>())catalogCommand({{"op","library_remove"},{"id",lib["id"]}});});});optionSeparator=2;}
-void collectionManage(){if(page==9){if(selected<int(catalog["playlists"].size()))managePlaylist(catalog["playlists"][selected]);else emptyLibraryActions("playlists_view");return;}if(page==6){radioActions();return;}if(!libraryID.empty()){auto rows=libraryAlbums();if(selected<int(rows.size()))manageAlbum(rows[selected]);return;}if(selected>=int(catalog["libraries"].size())){emptyLibraryActions("collections_view");return;}manageLibrary(catalog["libraries"][selected]);}
+void manageLibrary(nlohmann::json lib){choose("Manage collection",{0,1,2,3,4},{"Rename collection","Delete collection (keep album files)","Create collection",libraryViewLabel("collections_view"),"Sort order"},0,[this,lib](auto v){if(v.template get<int>()==4){sortLibraryItems(false,lib["id"]);return;}if(v.template get<int>()==3){libraryViewChoice("collections_view");return;}if(v.template get<int>()==2){createLibrary();return;}if(v.template get<int>()==0){std::string name=lib["name"];if(keyboard("Collection name",name))catalogCommand({{"op","library_save"},{"id",lib["id"]},{"name",name}});}else choose("Delete this collection?",{false,true},{"Cancel","Delete"},false,[this,lib](auto yes){if(yes.template get<bool>())catalogCommand({{"op","library_remove"},{"id",lib["id"]}});});});optionSeparator=2;}
+void collectionManage(){if(movingItems)return;if(page==9){if(selected<int(catalog["playlists"].size()))managePlaylist(catalog["playlists"][selected]);else emptyLibraryActions("playlists_view");return;}if(page==6){radioActions();return;}if(!libraryID.empty()){auto rows=libraryAlbums();if(selected<int(rows.size()))manageAlbum(rows[selected]);return;}if(selected>=int(catalog["libraries"].size())){emptyLibraryActions("collections_view");return;}manageLibrary(catalog["libraries"][selected]);}
 int albumTileHeight()const{return layout().x(184)+64;}
 bool collectionGrid()const{return page==5?(!libraryID.empty()||settings.collectionsView=="grid"):page==9?settings.playlistsView=="grid":page==6&&settings.radioView=="grid";}
 int collectionPageSize()const{return std::max(1,(layout().panelHeight()-55)/albumTileHeight())*4;}
@@ -87,6 +108,7 @@ mutable nlohmann::json collectionRowsCache;
 mutable uint64_t collectionRowsRevision=~uint64_t(0);mutable std::string collectionRowsID;
 const nlohmann::json &collectionRows(bool albums)const{
  if(!albums)return page==9?catalog["playlists"]:page==6?catalog["stations"]:catalog["libraries"];
+ if(movingItems&&movingKind=="library"){collectionRowsCache=movingRows;return collectionRowsCache;}
  auto revision=catalog.value("revision",uint64_t(0));if(collectionRowsRevision!=revision||collectionRowsID!=libraryID){collectionRowsCache=libraryAlbums();collectionRowsID=libraryID;collectionRowsRevision=revision;}return collectionRowsCache;
 }
 void drawCollections(){
@@ -105,14 +127,15 @@ void drawCollections(){
 
 mutable uint64_t playbackAlbumRevision=~uint64_t(0);
 mutable std::string playbackAlbumPath;mutable nlohmann::json playbackAlbumSource;
-mutable const nlohmann::json *playbackAlbumCache=nullptr;
+mutable nlohmann::json playbackAlbumCache=nullptr;
 const nlohmann::json *playbackAlbum(const Playback &p)const{
  if(p.track.path.empty()||p.track.source.root==RadioRoot)return nullptr;
  auto ref=sourceReference(p.track.source);auto revision=catalog.value("revision",uint64_t(0));
  if(revision!=playbackAlbumRevision||p.track.path!=playbackAlbumPath||ref!=playbackAlbumSource){
   playbackAlbumRevision=revision;playbackAlbumPath=p.track.path;playbackAlbumSource=std::move(ref);playbackAlbumCache=nullptr;
-  auto path=parent(p.track.path);for(const auto &a:catalog["albums"])if(a["source"]==playbackAlbumSource&&a["path"]==path){playbackAlbumCache=&a;break;}
+  size_t best=0;for(const auto &a:catalog["albums"]){auto base=a["path"].template get<std::string>();bool inside=base.empty()||p.track.path.rfind(base+"/",0)==0;if(a["source"]==playbackAlbumSource&&inside&&(!playbackAlbumCache.is_object()||base.size()>=best)){for(const auto &track:a["tracks"])if(track["path"]==p.track.path){playbackAlbumCache=a;best=base.size();break;}}}
+
  }
- return playbackAlbumCache;
+ return playbackAlbumCache.is_object()?&playbackAlbumCache:nullptr;
 }
-Playback libraryPlayback(Playback p)const{if(auto a=playbackAlbum(p)){p.details.album=a->value("title",p.details.album);if(p.details.artist.empty())p.details.artist=a->value("artist",std::string{});}return p;}
+Playback libraryPlayback(Playback p)const{if(auto a=playbackAlbum(p)){for(auto &t:(*a)["tracks"])if(t["path"]==p.track.path){p.details.title=t.value("title",t.value("name",p.details.title));p.details.artist=t.value("artist",p.details.artist);break;}p.details.album=a->value("title",p.details.album);if(p.details.artist.empty())p.details.artist=a->value("artist",std::string{});}return p;}
